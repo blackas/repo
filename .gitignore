@@ -1,0 +1,11 @@
+db.sqlite3
+__pycache__/
+.ipynb_checkpoints
+vovu/settings/local.py
+.idea/*
+!.idea/ruff.xml
+!.idea/mypy.xml
+CLAUDE.md
+!vovu/orders/landedcosts/shipping/rates/CLAUDE.md
+*.mo
+
