@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from datetime import date
+from asgiref.sync import sync_to_async
 
 from api.schemas import (
     StockResponse,
@@ -26,17 +27,21 @@ async def list_stocks(
     """
     주식 목록 조회
     """
-    queryset = Stock.objects.filter(is_active=True)
+    @sync_to_async
+    def get_stocks():
+        queryset = Stock.objects.filter(is_active=True)
 
-    if market:
-        queryset = queryset.filter(market=market)
+        if market:
+            queryset = queryset.filter(market=market)
 
-    if search:
-        queryset = queryset.filter(name__icontains=search) | queryset.filter(
-            code__icontains=search
-        )
+        if search:
+            queryset = queryset.filter(name__icontains=search) | queryset.filter(
+                code__icontains=search
+            )
 
-    stocks = queryset[skip : skip + limit]
+        return list(queryset[skip : skip + limit])
+
+    stocks = await get_stocks()
     return [StockResponse.model_validate(stock) for stock in stocks]
 
 
@@ -49,7 +54,7 @@ async def read_stock(
     특정 주식 조회
     """
     try:
-        stock = Stock.objects.get(code=stock_code, is_active=True)
+        stock = await sync_to_async(Stock.objects.get)(code=stock_code, is_active=True)
     except Stock.DoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -67,13 +72,14 @@ async def create_stock(
     """
     주식 생성 (관리자 전용)
     """
-    if Stock.objects.filter(code=stock_in.code).exists():
+    exists = await sync_to_async(Stock.objects.filter(code=stock_in.code).exists)()
+    if exists:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Stock code already exists",
         )
 
-    stock = Stock.objects.create(**stock_in.model_dump())
+    stock = await sync_to_async(Stock.objects.create)(**stock_in.model_dump())
     return StockResponse.model_validate(stock)
 
 
@@ -87,7 +93,7 @@ async def update_stock(
     주식 정보 수정 (관리자 전용)
     """
     try:
-        stock = Stock.objects.get(code=stock_code)
+        stock = await sync_to_async(Stock.objects.get)(code=stock_code)
     except Stock.DoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -98,7 +104,7 @@ async def update_stock(
     for field, value in update_data.items():
         setattr(stock, field, value)
 
-    stock.save()
+    await sync_to_async(stock.save)()
     return StockResponse.model_validate(stock)
 
 
@@ -114,22 +120,26 @@ async def get_stock_prices(
     주식 가격 데이터 조회
     """
     try:
-        stock = Stock.objects.get(code=stock_code)
+        stock = await sync_to_async(Stock.objects.get)(code=stock_code)
     except Stock.DoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Stock not found",
         )
 
-    queryset = DailyPrice.objects.filter(stock=stock).select_related("stock")
+    @sync_to_async
+    def get_prices():
+        queryset = DailyPrice.objects.filter(stock=stock).select_related("stock")
 
-    if start_date:
-        queryset = queryset.filter(trade_date__gte=start_date)
+        if start_date:
+            queryset = queryset.filter(trade_date__gte=start_date)
 
-    if end_date:
-        queryset = queryset.filter(trade_date__lte=end_date)
+        if end_date:
+            queryset = queryset.filter(trade_date__lte=end_date)
 
-    prices = queryset[:limit]
+        return list(queryset[:limit])
+
+    prices = await get_prices()
 
     result = []
     for price in prices:
