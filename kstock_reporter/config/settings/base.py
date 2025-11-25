@@ -97,6 +97,18 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
 CELERY_BEAT_SCHEDULE = {
+    # Stock data synchronization tasks
+    "sync-stock-master-daily": {
+        "task": "apps.stocks.tasks.sync_stock_master_task",
+        "schedule": crontab(hour=7, minute=0),
+        "options": {"expires": 3600},
+    },
+    "sync-daily-prices-daily": {
+        "task": "apps.stocks.tasks.sync_daily_prices_task",
+        "schedule": crontab(hour=7, minute=20),
+        "options": {"expires": 3600},
+    },
+    # Report generation and notification tasks
     "create_daily_reports_at_0730": {
         "task": "apps.reports.tasks.create_daily_reports_for_all_users",
         "schedule": crontab(hour=7, minute=30),
