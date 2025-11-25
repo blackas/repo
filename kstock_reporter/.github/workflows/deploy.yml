@@ -1,0 +1,78 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: https://staging.kstock-reporter.com
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to Staging
+      run: |
+        echo "Deploying to staging environment..."
+        # 실제 배포 스크립트를 여기에 추가
+        # 예: SSH를 통한 배포, Docker 이미지 푸시 등
+
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests..."
+        # 배포 후 간단한 헬스 체크
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: https://kstock-reporter.com
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Deploy to Production
+      run: |
+        echo "Deploying to production environment..."
+        # 실제 배포 스크립트를 여기에 추가
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+
+  notify:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+
+    steps:
+    - name: Send Slack notification
+      if: always()
+      run: |
+        echo "Sending deployment notification..."
+        # Slack webhook을 사용한 알림
+        # curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} -d '{"text":"Deployment completed"}'
