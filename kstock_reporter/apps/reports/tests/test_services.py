@@ -13,7 +13,8 @@ from apps.stocks.models import DailyPrice
 
 @pytest.mark.django_db
 class TestGetWatchlistTopBottom:
-    def test_get_top_bottom_with_data(self, user, watchlist, stock, daily_price):
+    def test_get_top_bottom_with_data(self, user, watchlist, stock, daily_price, watchlist_item):
+        """watchlist_item 픽스처로 stock을 watchlist에 추가"""
         top, bottom = get_watchlist_top_bottom(user, date.today())
         assert len(top) > 0
         assert len(bottom) > 0
@@ -27,6 +28,8 @@ class TestGetWatchlistTopBottom:
         from apps.stocks.models import Stock
         from apps.accounts.models import WatchListItem
 
+        # stock과 stock2 모두 관심목록에 추가
+        WatchListItem.objects.create(watchlist=watchlist, stock=stock)
         stock2 = Stock.objects.create(code="000660", name="SK하이닉스")
         WatchListItem.objects.create(watchlist=watchlist, stock=stock2)
 
@@ -59,7 +62,8 @@ class TestGetWatchlistTopBottom:
 
 @pytest.mark.django_db
 class TestBuildDailyReportText:
-    def test_build_report_with_data(self, user, watchlist, stock, daily_price):
+    def test_build_report_with_data(self, user, watchlist, stock, daily_price, watchlist_item):
+        """watchlist_item 픽스처로 stock을 watchlist에 추가"""
         text = build_daily_report_text(user, date.today())
         assert "일일 리포트" in text
         assert "삼성전자" in text
@@ -73,7 +77,8 @@ class TestBuildDailyReportText:
 
 @pytest.mark.django_db
 class TestCreateDailyReportForUser:
-    def test_create_daily_report(self, user, watchlist, stock, daily_price):
+    def test_create_daily_report(self, user, watchlist, stock, daily_price, watchlist_item):
+        """watchlist_item 픽스처로 stock을 watchlist에 추가"""
         report = create_daily_report_for_user(user, date.today())
         assert report.user == user
         assert report.report_date == date.today()

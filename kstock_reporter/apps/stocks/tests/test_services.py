@@ -22,11 +22,12 @@ class TestFormatKrxDate:
 
 @pytest.mark.django_db
 class TestSyncStockMasterFromKrx:
-    @patch("apps.stocks.services.krx")
-    def test_sync_stock_master(self, mock_krx):
-        mock_krx.get_market_ticker_list.return_value = ["005930", "000660"]
-        mock_krx.get_market_ticker_name.side_effect = ["삼성전자", "SK하이닉스"]
-        mock_krx.get_stock_market_from_ticker.return_value = "KOSPI"
+    @patch("pykrx.stock.get_market_ticker_list")
+    @patch("pykrx.stock.get_market_ticker_name")
+    def test_sync_stock_master(self, mock_get_name, mock_get_list):
+        """get_stock_market_from_ticker는 try/except로 처리되므로 mock 불필요"""
+        mock_get_list.return_value = ["005930", "000660"]
+        mock_get_name.side_effect = ["삼성전자", "SK하이닉스"]
 
         count = sync_stock_master_from_krx(date(2024, 11, 25))
 
@@ -38,8 +39,8 @@ class TestSyncStockMasterFromKrx:
 
 @pytest.mark.django_db
 class TestSyncDailyPricesFromKrx:
-    @patch("apps.stocks.services.krx")
-    def test_sync_daily_prices(self, mock_krx, stock):
+    @patch("pykrx.stock.get_market_ohlcv_by_ticker")
+    def test_sync_daily_prices(self, mock_get_ohlcv, stock):
         mock_df = pd.DataFrame({
             "시가": [70000],
             "고가": [71000],
@@ -51,7 +52,7 @@ class TestSyncDailyPricesFromKrx:
             "등락률": [0.71]
         }, index=["005930"])
 
-        mock_krx.get_market_ohlcv_by_ticker.return_value = mock_df
+        mock_get_ohlcv.return_value = mock_df
 
         today = date.today()
         count = sync_daily_prices_from_krx(today)
