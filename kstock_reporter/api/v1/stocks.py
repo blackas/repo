@@ -8,6 +8,7 @@ from api.schemas import (
     StockCreate,
     StockUpdate,
     DailyPriceResponse,
+    PaginatedResponse,
 )
 from api.dependencies import get_current_user, get_current_active_superuser
 from apps.accounts.models import User
@@ -16,19 +17,19 @@ from apps.stocks.models import Stock, DailyPrice
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 
-@router.get("/", response_model=List[StockResponse])
+@router.get("/", response_model=PaginatedResponse[StockResponse])
 async def list_stocks(
-    skip: int = 0,
-    limit: int = 100,
+    page: int = Query(default=1, ge=1, description="페이지 번호 (1부터 시작)"),
+    page_size: int = Query(default=20, ge=1, le=100, description="페이지당 아이템 수"),
     market: Optional[str] = None,
     search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
 ):
     """
-    주식 목록 조회
+    주식 목록 조회 (페이지네이션)
     """
     @sync_to_async
-    def get_stocks():
+    def get_stocks_paginated():
         queryset = Stock.objects.filter(is_active=True)
 
         if market:
@@ -39,10 +40,21 @@ async def list_stocks(
                 code__icontains=search
             )
 
-        return list(queryset[skip : skip + limit])
+        total = queryset.count()
+        offset = (page - 1) * page_size
+        stocks = list(queryset[offset : offset + page_size])
 
-    stocks = await get_stocks()
-    return [StockResponse.model_validate(stock) for stock in stocks]
+        return stocks, total
+
+    stocks, total = await get_stocks_paginated()
+    items = [StockResponse.model_validate(stock) for stock in stocks]
+
+    return PaginatedResponse.create(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size
+    )
 
 
 @router.get("/{stock_code}", response_model=StockResponse)

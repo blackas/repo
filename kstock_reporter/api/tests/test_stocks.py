@@ -14,15 +14,22 @@ from apps.stocks.models import Stock, DailyPrice
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 async def test_list_stocks(authenticated_client: AsyncClient, api_stock):
-    """주식 목록 조회 테스트"""
+    """주식 목록 조회 테스트 (페이지네이션)"""
     response = await authenticated_client.get("/api/v1/stocks/")
 
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
-    assert len(data) > 0
-    assert data[0]["code"] == api_stock.code
-    assert data[0]["name"] == api_stock.name
+    assert "total" in data
+    assert "page" in data
+    assert "page_size" in data
+    assert "total_pages" in data
+    assert "items" in data
+    assert isinstance(data["items"], list)
+    assert len(data["items"]) > 0
+    assert data["items"][0]["code"] == api_stock.code
+    assert data["items"][0]["name"] == api_stock.name
+    assert data["page"] == 1
+    assert data["total"] >= 1
 
 
 @pytest.mark.asyncio
@@ -37,8 +44,8 @@ async def test_list_stocks_with_search(authenticated_client: AsyncClient, api_st
 
     assert response.status_code == 200
     data = response.json()
-    assert len(data) > 0
-    assert api_stock.code in [stock["code"] for stock in data]
+    assert len(data["items"]) > 0
+    assert api_stock.code in [stock["code"] for stock in data["items"]]
 
 
 @pytest.mark.asyncio
@@ -52,8 +59,8 @@ async def test_list_stocks_with_market_filter(authenticated_client: AsyncClient,
 
     assert response.status_code == 200
     data = response.json()
-    assert len(data) > 0
-    assert all(stock["market"] == api_stock.market for stock in data)
+    assert len(data["items"]) > 0
+    assert all(stock["market"] == api_stock.market for stock in data["items"])
 
 
 @pytest.mark.asyncio
@@ -165,8 +172,8 @@ async def test_get_stock_detail_unauthenticated(async_client: AsyncClient, api_s
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-async def test_pagination_with_skip_limit(authenticated_client: AsyncClient, api_stock):
-    """페이지네이션 (skip/limit) 테스트"""
+async def test_pagination_with_page_and_page_size(authenticated_client: AsyncClient, api_stock):
+    """페이지네이션 (page/page_size) 테스트"""
     from asgiref.sync import sync_to_async
 
     # 추가 주식 데이터 생성
@@ -186,22 +193,28 @@ async def test_pagination_with_skip_limit(authenticated_client: AsyncClient, api
         is_active=True
     )
 
-    # skip=0, limit=2로 조회
+    # page=1, page_size=2로 조회
     response = await authenticated_client.get(
         "/api/v1/stocks/",
-        params={"skip": 0, "limit": 2}
+        params={"page": 1, "page_size": 2}
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert len(data) <= 2
+    assert data["page"] == 1
+    assert data["page_size"] == 2
+    assert len(data["items"]) <= 2
+    assert data["total"] >= 3
+    assert data["total_pages"] >= 2
 
-    # skip=1, limit=2로 조회
+    # page=2, page_size=2로 조회
     response = await authenticated_client.get(
         "/api/v1/stocks/",
-        params={"skip": 1, "limit": 2}
+        params={"page": 2, "page_size": 2}
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert len(data) <= 2
+    assert data["page"] == 2
+    assert data["page_size"] == 2
+    assert len(data["items"]) <= 2

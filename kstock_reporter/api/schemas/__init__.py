@@ -13,6 +13,7 @@ from .watchlist import (
     WatchListItemInDB,
 )
 from .report import DailyReportBase, DailyReportInDB, DailyReportResponse
+from .pagination import PaginatedResponse
 
 __all__ = [
     "Token",
@@ -42,4 +43,5 @@ __all__ = [
     "DailyReportBase",
     "DailyReportInDB",
     "DailyReportResponse",
+    "PaginatedResponse",
 ]
