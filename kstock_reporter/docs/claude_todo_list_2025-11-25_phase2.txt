@@ -1,0 +1,492 @@
+# KStock Reporter 프로젝트 개선 작업 로그 - Phase 2
+작업 일자: 2025-11-25
+프로젝트: kstock_reporter (Django 기반 한국 주식 리포트 시스템)
+
+================================================================================
+## Phase 2: FastAPI 통합 및 개선사항 (완료)
+================================================================================
+
+### 1. FastAPI와 Django 통합 설정 ✅
+**목적**: 고성능 REST API 제공 및 자동 문서화
+
+**작업 내용**:
+- requirements.txt 업데이트
+  * FastAPI 0.115.5
+  * uvicorn[standard] 0.32.1 (ASGI 서버)
+  * python-jose[cryptography] 3.3.0 (JWT)
+  * passlib[bcrypt] 1.7.4 (비밀번호 해싱)
+  * python-multipart 0.0.19 (파일 업로드)
+  * httpx 0.27.2 (API 테스트용)
+
+- api/ 디렉토리 구조 생성
+  * api/database.py: Django ORM 통합 설정
+  * api/dependencies.py: JWT 인증 의존성
+    - create_access_token(): JWT 토큰 생성
+    - verify_token(): JWT 토큰 검증
+    - get_current_user(): 현재 인증된 사용자
+    - get_current_active_superuser(): 관리자 권한 확인
+
+**결과**: FastAPI와 Django가 동일한 데이터베이스 공유
+
+
+### 2. Pydantic 스키마 생성 ✅
+**목적**: 요청/응답 데이터 검증 및 자동 문서화
+
+**작업 내용**:
+- api/schemas/ 디렉토리 생성
+
+- api/schemas/auth.py
+  * Token: JWT 토큰 응답
+  * TokenData: 토큰 페이로드
+  * UserLogin: 로그인 요청
+
+- api/schemas/user.py
+  * UserBase: 기본 사용자 정보
+  * UserCreate: 사용자 생성 (비밀번호 포함)
+  * UserUpdate: 사용자 정보 수정
+  * UserInDB: DB 사용자 모델
+  * UserResponse: API 응답용
+
+- api/schemas/stock.py
+  * StockBase, StockCreate, StockUpdate
+  * StockInDB, StockResponse
+
+- api/schemas/daily_price.py
+  * DailyPriceBase: 가격 데이터
+  * DailyPriceInDB, DailyPriceResponse
+
+- api/schemas/watchlist.py
+  * WatchListBase, WatchListCreate, WatchListUpdate
+  * WatchListItemBase, WatchListItemCreate
+  * WatchListResponse (items 포함)
+
+- api/schemas/report.py
+  * DailyReportBase, DailyReportInDB
+  * DailyReportResponse (username 포함)
+
+**결과**: 모든 Django 모델에 대응하는 Pydantic 스키마 완성
+
+
+### 3. API 엔드포인트 구현 (CRUD) ✅
+**목적**: RESTful API 제공
+
+**작업 내용**:
+- api/v1/ 디렉토리에 라우터 생성
+
+- api/v1/auth.py (인증)
+  * POST /auth/register - 회원가입
+  * POST /auth/login - 로그인 (JWT 발급)
+
+- api/v1/users.py (사용자 관리)
+  * GET /users/me - 현재 사용자 정보
+  * PUT /users/me - 사용자 정보 수정
+  * GET /users/ - 사용자 목록 (관리자 전용)
+  * GET /users/{id} - 특정 사용자 조회 (관리자 전용)
+
+- api/v1/stocks.py (주식 데이터)
+  * GET /stocks/ - 주식 목록 (검색, 필터링)
+  * GET /stocks/{code} - 특정 주식 조회
+  * POST /stocks/ - 주식 생성 (관리자 전용)
+  * PUT /stocks/{code} - 주식 정보 수정 (관리자 전용)
+  * GET /stocks/{code}/prices - 주식 가격 데이터
+
+- api/v1/watchlists.py (관심목록)
+  * GET /watchlists/ - 관심목록 조회
+  * POST /watchlists/ - 관심목록 생성
+  * GET /watchlists/{id} - 특정 관심목록 조회
+  * PUT /watchlists/{id} - 관심목록 수정
+  * DELETE /watchlists/{id} - 관심목록 삭제
+  * POST /watchlists/{id}/items - 종목 추가
+  * DELETE /watchlists/{id}/items/{item_id} - 종목 제거
+
+- api/v1/reports.py (리포트)
+  * GET /reports/ - 리포트 목록 (날짜 필터링)
+  * GET /reports/{id} - 특정 리포트 조회
+  * GET /reports/date/{date} - 특정 날짜 리포트 조회
+
+- api/v1/router.py
+  * 모든 라우터 통합
+
+**결과**: 완전한 CRUD API 구현
+
+
+### 4. JWT 인증 시스템 ✅
+**목적**: 안전한 사용자 인증
+
+**작업 내용**:
+- python-jose를 사용한 JWT 구현
+- api/dependencies.py에 인증 로직 구현
+  * SECRET_KEY: 환경 변수에서 로드
+  * ALGORITHM: HS256
+  * ACCESS_TOKEN_EXPIRE_MINUTES: 24시간
+
+- HTTPBearer를 사용한 Bearer 토큰 인증
+- get_current_user 의존성으로 보호된 엔드포인트
+- get_current_active_superuser로 관리자 권한 체크
+
+- 회원가입 시:
+  * 중복 사용자명 체크
+  * 중복 이메일 체크
+  * Django User.objects.create_user() 사용
+
+- 로그인 시:
+  * Django authenticate() 사용
+  * 활성 사용자 확인
+  * JWT 토큰 발급
+
+**결과**: JWT 기반 인증 시스템 완성
+
+
+### 5. 메인 FastAPI 애플리케이션 ✅
+**목적**: FastAPI 앱 설정 및 실행
+
+**작업 내용**:
+- main.py 생성
+  * Django 설정 초기화
+  * FastAPI 앱 생성
+    - title: "KStock Reporter API"
+    - docs_url: "/api/docs"
+    - redoc_url: "/api/redoc"
+    - openapi_url: "/api/openapi.json"
+
+  * CORS 미들웨어 설정
+  * 예외 처리
+    - HTTP 예외 처리
+    - 요청 검증 오류 처리
+    - 일반 예외 처리
+
+  * 라우터 등록 (/api/v1)
+  * 헬스 체크 엔드포인트 (/)
+
+**결과**: uvicorn main:app으로 실행 가능
+
+
+### 6. 서비스 레이어 에러 처리 개선 ✅
+**목적**: 안정성 및 디버깅 향상
+
+**작업 내용**:
+- apps/reports/services.py 개선
+  * 로깅 추가 (logger)
+  * get_watchlist_top_bottom():
+    - 관심목록 없을 때 처리
+    - 가격 데이터 없을 때 처리
+    - select_related() 최적화
+    - 상세한 로그
+    - ReportGenerationError 예외
+
+  * build_daily_report_text():
+    - @log_execution_time 데코레이터
+    - 상세한 로그
+    - 예외 처리
+
+  * create_daily_report_for_user():
+    - @log_execution_time 데코레이터
+    - created/updated 로그
+    - 예외 처리
+
+- apps/notifications/services/kakao_client.py 개선
+  * 로깅 추가
+  * API 설정 검증
+  * send_message():
+    - @log_execution_time 데코레이터
+    - @retry_on_failure (2회 재시도)
+    - 전화번호 마스킹 (mask_sensitive_data)
+    - 상세한 로그
+    - Timeout 예외 처리
+    - RequestException 예외 처리
+    - KakaoAPIError 예외
+
+**결과**: 모든 서비스에 로깅 및 에러 처리 적용
+
+
+### 7. 캐싱 전략 구현 ✅
+**목적**: 성능 향상 및 DB 부하 감소
+
+**작업 내용**:
+- apps/common/cache.py 생성
+  * make_cache_key(): 캐시 키 생성
+  * cache_result() 데코레이터:
+    - 함수 결과 캐싱
+    - timeout 설정 가능
+    - use_cache 옵션
+    - 캐시 미스/히트 로그
+
+  * invalidate_cache(): 특정 캐시 무효화
+  * invalidate_pattern(): 패턴 매칭 캐시 무효화
+  * get_or_set_cache(): 캐시 get or set
+
+  * CacheManager 클래스:
+    - get_stock_price_key()
+    - get_stock_list_key()
+    - get_watchlist_key()
+    - get_report_key()
+    - invalidate_user_caches()
+    - invalidate_stock_caches()
+
+- config/settings/base.py에 캐시 설정 추가
+  * BACKEND: django.core.cache.backends.redis.RedisCache
+  * LOCATION: redis://redis:6379/2
+  * KEY_PREFIX: "kstock"
+  * TIMEOUT: 900초 (15분)
+
+**결과**: Redis 기반 캐싱 시스템 구축
+
+
+### 8. Docker Compose 업데이트 ✅
+**목적**: FastAPI 서비스 추가
+
+**작업 내용**:
+- docker-compose.yml 업데이트
+  * api 서비스 추가
+    - container_name: kstock_api
+    - command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    - ports: 8001:8001
+    - depends_on: db, redis
+
+**결과**: docker-compose up으로 모든 서비스 실행
+
+
+### 9. 문서화 업데이트 ✅
+**목적**: FastAPI 사용법 안내
+
+**작업 내용**:
+- README.md 업데이트
+  * 주요 기능에 FastAPI 추가
+  * 기술 스택 업데이트
+  * 프로젝트 구조에 api/ 추가
+  * Docker Compose 실행 가이드 업데이트
+  * FastAPI 실행 방법 추가
+
+  * "API 사용법" 섹션 추가:
+    - FastAPI 문서화 링크
+    - 인증 예시 (회원가입, 로그인)
+    - API 요청 예시 (curl)
+    - 주요 엔드포인트 표
+
+- .env.example 업데이트
+  * REDIS_URL 추가
+  * JWT_SECRET_KEY 추가
+
+**결과**: 개발자 친화적인 문서 완성
+
+
+================================================================================
+## 생성된 파일 목록 (Phase 2)
+================================================================================
+
+### FastAPI 관련 파일 (27개):
+1. api/__init__.py
+2. api/database.py
+3. api/dependencies.py
+
+4. api/v1/__init__.py
+5. api/v1/auth.py
+6. api/v1/users.py
+7. api/v1/stocks.py
+8. api/v1/watchlists.py
+9. api/v1/reports.py
+10. api/v1/router.py
+
+11. api/schemas/__init__.py
+12. api/schemas/auth.py
+13. api/schemas/user.py
+14. api/schemas/stock.py
+15. api/schemas/daily_price.py
+16. api/schemas/watchlist.py
+17. api/schemas/report.py
+
+18. main.py (FastAPI 메인 애플리케이션)
+
+### 공통 모듈 추가:
+19. apps/common/cache.py
+
+### 수정된 파일 (Phase 2):
+1. requirements.txt (FastAPI 패키지 추가)
+2. apps/reports/services.py (로깅, 에러 처리 추가)
+3. apps/notifications/services/kakao_client.py (로깅, 에러 처리 추가)
+4. config/settings/base.py (캐시 설정 추가)
+5. docker-compose.yml (api 서비스 추가)
+6. README.md (FastAPI 사용법 추가)
+7. .env.example (JWT, Redis 설정 추가)
+
+
+================================================================================
+## FastAPI 엔드포인트 요약
+================================================================================
+
+### 인증 (Authentication)
+POST   /api/v1/auth/register          # 회원가입
+POST   /api/v1/auth/login             # 로그인 (JWT 발급)
+
+### 사용자 (Users)
+GET    /api/v1/users/me               # 현재 사용자 정보
+PUT    /api/v1/users/me               # 사용자 정보 수정
+GET    /api/v1/users/                 # 사용자 목록 (관리자)
+GET    /api/v1/users/{id}             # 특정 사용자 조회 (관리자)
+
+### 주식 (Stocks)
+GET    /api/v1/stocks/                # 주식 목록
+GET    /api/v1/stocks/{code}          # 주식 상세
+POST   /api/v1/stocks/                # 주식 생성 (관리자)
+PUT    /api/v1/stocks/{code}          # 주식 수정 (관리자)
+GET    /api/v1/stocks/{code}/prices   # 주식 가격 데이터
+
+### 관심목록 (Watchlists)
+GET    /api/v1/watchlists/            # 관심목록 조회
+POST   /api/v1/watchlists/            # 관심목록 생성
+GET    /api/v1/watchlists/{id}        # 특정 관심목록 조회
+PUT    /api/v1/watchlists/{id}        # 관심목록 수정
+DELETE /api/v1/watchlists/{id}        # 관심목록 삭제
+POST   /api/v1/watchlists/{id}/items  # 종목 추가
+DELETE /api/v1/watchlists/{id}/items/{item_id}  # 종목 제거
+
+### 리포트 (Reports)
+GET    /api/v1/reports/               # 리포트 목록
+GET    /api/v1/reports/{id}           # 리포트 상세
+GET    /api/v1/reports/date/{date}    # 특정 날짜 리포트
+
+
+================================================================================
+## 실행 방법
+================================================================================
+
+### Docker Compose 사용:
+```bash
+docker-compose up -d
+docker-compose exec web python manage.py migrate
+docker-compose exec web python manage.py createsuperuser
+
+# 접속
+# Django Admin: http://localhost:8000/admin/
+# FastAPI Docs: http://localhost:8001/api/docs
+# FastAPI ReDoc: http://localhost:8001/api/redoc
+```
+
+### 로컬 개발:
+```bash
+# Django
+python manage.py runserver
+
+# FastAPI (별도 터미널)
+uvicorn main:app --reload --port 8001
+```
+
+
+================================================================================
+## API 테스트 예시
+================================================================================
+
+### 1. 회원가입
+```bash
+curl -X POST "http://localhost:8001/api/v1/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "email": "test@example.com",
+    "password": "testpass123",
+    "phone_number": "010-1234-5678"
+  }'
+```
+
+### 2. 로그인
+```bash
+curl -X POST "http://localhost:8001/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "password": "testpass123"
+  }'
+# 응답: {"access_token": "eyJ...", "token_type": "bearer"}
+```
+
+### 3. 인증된 API 호출
+```bash
+TOKEN="your-jwt-token"
+
+# 주식 목록
+curl -X GET "http://localhost:8001/api/v1/stocks/" \
+  -H "Authorization: Bearer $TOKEN"
+
+# 관심목록 생성
+curl -X POST "http://localhost:8001/api/v1/watchlists/" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "내 포트폴리오"}'
+```
+
+
+================================================================================
+## 주요 개선사항 (Phase 1 + Phase 2)
+================================================================================
+
+### Phase 1 (필수):
+✅ Admin 인터페이스 추가
+✅ 테스트 인프라 구축 (pytest)
+✅ 로깅 시스템 설정
+✅ 환경별 설정 분리
+✅ 보안 설정 강화
+
+### Phase 2 (중요):
+✅ FastAPI 통합 (Django + FastAPI)
+✅ Pydantic 스키마 (자동 검증)
+✅ REST API 엔드포인트 (CRUD)
+✅ JWT 인증 시스템
+✅ 서비스 레이어 에러 처리
+✅ Redis 캐싱 전략
+
+
+================================================================================
+## 다음 단계 (Phase 3): 추가 개선사항 (예정)
+================================================================================
+
+1. CI/CD 파이프라인
+   - GitHub Actions 설정
+   - 자동 테스트 실행
+   - 자동 배포 (Heroku, AWS, etc.)
+
+2. 모니터링 도구
+   - Celery Flower (Celery 모니터링)
+   - Sentry (에러 추적)
+   - Prometheus + Grafana (성능 모니터링)
+
+3. 고급 기능
+   - WebSocket 지원 (실시간 주가 업데이트)
+   - GraphQL API 추가
+   - 엘라스틱서치 통합 (전문 검색)
+   - 데이터 시각화 (차트, 그래프)
+
+4. 성능 최적화
+   - 데이터베이스 쿼리 최적화
+   - 인덱스 추가
+   - N+1 쿼리 해결
+   - API 응답 캐싱 확대
+
+5. 보안 강화
+   - Rate limiting
+   - API 키 관리
+   - HTTPS 강제
+   - CORS 정책 강화
+
+
+================================================================================
+## 기술 부채 및 개선 여지
+================================================================================
+
+1. API 버전 관리 전략 명확화
+2. API 테스트 코드 추가 (httpx)
+3. Celery 태스크에 에러 처리 추가
+4. 캐싱 전략 실제 적용 (데코레이터 사용)
+5. API 응답 페이지네이션 개선
+6. 파일 업로드 기능 (프로필 이미지 등)
+7. 비밀번호 재설정 기능
+8. 이메일 인증 기능
+
+
+================================================================================
+## 작업 완료 시각
+================================================================================
+2025-11-25
+
+Phase 1 완료 ✅
+Phase 2 완료 ✅
+Phase 3 대기 중
