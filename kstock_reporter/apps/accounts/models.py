@@ -1,6 +1,9 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from apps.common.managers import WatchListQuerySet
+
+
 class User(AbstractUser):
     phone_number = models.CharField("전화번호", max_length=20, blank=True, null=True)
     kakao_user_id = models.CharField(
@@ -20,6 +23,8 @@ class WatchList(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="watchlists")
     name = models.CharField("관심목록 이름", max_length=100, default="기본")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = WatchListQuerySet.as_manager()
 
     def __str__(self):
         return f"{self.user} - {self.name}"

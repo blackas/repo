@@ -1,5 +1,8 @@
 from django.db import models
 
+from apps.common.managers import StockQuerySet, DailyPriceQuerySet
+
+
 class Stock(models.Model):
     code = models.CharField("종목코드", max_length=10, unique=True)
     name = models.CharField("종목명", max_length=100)
@@ -7,6 +10,8 @@ class Stock(models.Model):
     sector = models.CharField("섹터", max_length=100, blank=True, null=True)
     listed_at = models.DateField("상장일", blank=True, null=True)
     is_active = models.BooleanField("사용 여부", default=True)
+
+    objects = StockQuerySet.as_manager()
 
     def __str__(self):
         return f"{self.code} {self.name}"
@@ -25,6 +30,8 @@ class DailyPrice(models.Model):
     change = models.DecimalField("전일 대비", max_digits=15, decimal_places=2, null=True, blank=True)
     change_rate = models.DecimalField("등락률(%)", max_digits=7, decimal_places=2, null=True, blank=True)
     market_cap = models.BigIntegerField("시가총액", null=True, blank=True)
+
+    objects = DailyPriceQuerySet.as_manager()
 
     class Meta:
         unique_together = ("stock", "trade_date")
