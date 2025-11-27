@@ -11,6 +11,11 @@ class StockDataFetchError(KStockBaseException):
     pass
 
 
+class CryptoDataFetchError(KStockBaseException):
+    """암호화폐 데이터 수집 중 발생하는 예외"""
+    pass
+
+
 class KakaoAPIError(KStockBaseException):
     """카카오 API 호출 중 발생하는 예외"""
     pass
