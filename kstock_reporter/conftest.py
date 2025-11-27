@@ -102,3 +102,13 @@ def notification_log(db, user):
         success=True,
         response_code="200"
     )
+
+@pytest.fixture
+def coin(db):
+    from apps.crypto.models import Coin
+    return Coin.objects.create(
+        market_code="KRW-BTC",
+        korean_name="비트코인",
+        english_name="Bitcoin",
+        is_active=True
+    )

@@ -98,3 +98,39 @@ class DailyReportQuerySet(models.QuerySet, OptimizedQuerySetMixin):
 
     def recent(self, limit=30):
         return self.order_by("-report_date")[:limit]
+
+
+class CoinQuerySet(models.QuerySet):
+    """Coin 모델용 커스텀 QuerySet"""
+
+    def active(self):
+        """활성화된 코인만 조회"""
+        return self.filter(is_active=True)
+
+    def by_market_code(self, market_code: str):
+        """마켓 코드로 조회"""
+        return self.filter(market_code=market_code)
+
+    def search(self, keyword: str):
+        """코인 검색 (마켓 코드, 한글명, 영문명)"""
+        return self.filter(
+            models.Q(market_code__icontains=keyword) |
+            models.Q(korean_name__icontains=keyword) |
+            models.Q(english_name__icontains=keyword)
+        )
+
+
+class CoinCandleQuerySet(models.QuerySet):
+    """CoinCandle 모델용 커스텀 QuerySet"""
+
+    def for_coin(self, coin):
+        """특정 코인의 캔들 데이터"""
+        return self.filter(coin=coin)
+
+    def for_date_range(self, start_date, end_date):
+        """특정 기간의 캔들 데이터"""
+        return self.filter(trade_date__range=[start_date, end_date])
+
+    def latest_candles(self, limit=10):
+        """최신 캔들 데이터"""
+        return self.order_by('-trade_date')[:limit]
