@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "apps.common",
     "apps.accounts",
     "apps.stocks",
+    "apps.crypto",
     "apps.reports",
     "apps.notifications",
 ]
@@ -101,6 +102,17 @@ CELERY_BEAT_SCHEDULE = {
     "sync-stock-master-daily": {
         "task": "apps.stocks.tasks.sync_stock_master_task",
         "schedule": crontab(hour=7, minute=0),
+        "options": {"expires": 3600},
+    },
+    # Crypto data synchronization tasks
+    "sync-coin-master-daily": {
+        "task": "apps.crypto.tasks.sync_coin_master_task",
+        "schedule": crontab(hour=7, minute=10),
+        "options": {"expires": 3600},
+    },
+    "collect-crypto-candles-daily": {
+        "task": "apps.crypto.tasks.collect_crypto_candles_task",
+        "schedule": crontab(hour=7, minute=15),
         "options": {"expires": 3600},
     },
     "sync-daily-prices-daily": {

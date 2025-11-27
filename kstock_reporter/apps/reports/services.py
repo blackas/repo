@@ -8,10 +8,12 @@ from apps.stocks.models import DailyPrice
 from apps.accounts.models import WatchList
 from apps.common.exceptions import ReportGenerationError
 from apps.common.utils import log_execution_time
+from apps.common.cache import cache_result
 
 logger = logging.getLogger(__name__)
 
 
+@cache_result(timeout=600, key_prefix="watchlist_top_bottom", use_args=True)
 def get_watchlist_top_bottom(user, target_date: date, limit: int = 3):
     """
     사용자 관심목록의 상승/하락 TOP 종목 조회

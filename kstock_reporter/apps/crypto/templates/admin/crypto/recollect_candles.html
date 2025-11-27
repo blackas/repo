@@ -1,0 +1,76 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}캔들 데이터 재수집 - {{ opts.app_label }} - {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">홈</a>
+    &rsaquo; <a href="{% url 'admin:crypto_coincollectionconfig_changelist' %}">암호화폐 수집 설정</a>
+    &rsaquo; 캔들 데이터 재수집
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>캔들 데이터 재수집</h1>
+
+<div class="module">
+    <h2>선택된 설정</h2>
+    <ul>
+        {% for config in configs %}
+            <li>
+                <strong>{{ config.name }}</strong>
+                - {{ config.candle_type }}
+                - 코인 {{ config.coins.count }}개
+            </li>
+        {% empty %}
+            <li>선택된 설정이 없습니다.</li>
+        {% endfor %}
+    </ul>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+
+    <div class="module">
+        <h2>재수집 기간 설정</h2>
+
+        <div class="form-row">
+            <div>
+                <label for="{{ form.start_date.id_for_label }}">시작일:</label>
+                {{ form.start_date }}
+                {% if form.start_date.errors %}
+                    <p class="errornote">{{ form.start_date.errors }}</p>
+                {% endif %}
+                <p class="help">{{ form.start_date.help_text }}</p>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div>
+                <label for="{{ form.end_date.id_for_label }}">종료일:</label>
+                {{ form.end_date }}
+                {% if form.end_date.errors %}
+                    <p class="errornote">{{ form.end_date.errors }}</p>
+                {% endif %}
+                <p class="help">{{ form.end_date.help_text }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="submit-row">
+        <input type="submit" value="재수집 시작" class="default" />
+        <a href="{% url 'admin:crypto_coincollectionconfig_changelist' %}" class="button cancel-link">취소</a>
+    </div>
+</form>
+
+<div class="module">
+    <h2>주의사항</h2>
+    <ul>
+        <li>재수집은 백그라운드에서 Celery 태스크로 실행됩니다.</li>
+        <li>기존 데이터는 update_or_create로 갱신됩니다.</li>
+        <li>Upbit API Rate Limit을 고려하여 순차적으로 처리됩니다.</li>
+        <li>대량 데이터 수집 시 시간이 오래 걸릴 수 있습니다.</li>
+    </ul>
+</div>
+{% endblock %}
