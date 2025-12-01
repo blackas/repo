@@ -1,0 +1,133 @@
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Container,
+  Typography,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  CircularProgress,
+  Alert,
+  Box,
+} from '@mui/material';
+import type { AssetType } from '../types';
+import useStore from '../store/useStore';
+import { apiService } from '../services/api';
+
+interface AssetListPageProps {
+  assetType: AssetType;
+  title: string;
+}
+
+function AssetListPage({ assetType, title }: AssetListPageProps) {
+  const navigate = useNavigate();
+  const { assets, setAssets, setLoading, setError } = useStore();
+  const assetState = assets[assetType];
+
+  useEffect(() => {
+    const fetchAssets = async () => {
+      setLoading(assetType, true);
+      setError(assetType, null);
+      try {
+        const data = await apiService.getAssets(assetType);
+        setAssets(assetType, data);
+      } catch (error) {
+        setError(assetType, error instanceof Error ? error.message : 'Failed to fetch assets');
+      } finally {
+        setLoading(assetType, false);
+      }
+    };
+
+    fetchAssets();
+  }, [assetType, setAssets, setLoading, setError]);
+
+  const handleRowClick = (assetId: string | number) => {
+    navigate(`/assets/${assetType}/${assetId}`);
+  };
+
+  if (assetState.isLoading) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
+        <CircularProgress />
+      </Container>
+    );
+  }
+
+  if (assetState.error) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Alert severity="error">{assetState.error}</Alert>
+      </Container>
+    );
+  }
+
+  return (
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Typography variant="h4" gutterBottom>
+        {title}
+      </Typography>
+
+      {assetState.items.length === 0 ? (
+        <Box sx={{ mt: 4 }}>
+          <Alert severity="info">No assets found</Alert>
+        </Box>
+      ) : (
+        <TableContainer component={Paper} sx={{ mt: 3 }}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Symbol</TableCell>
+                <TableCell align="right">Price</TableCell>
+                <TableCell align="right">Change</TableCell>
+                <TableCell align="right">Change %</TableCell>
+                <TableCell align="right">Volume</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {assetState.items.map((asset) => (
+                <TableRow
+                  key={asset.id}
+                  hover
+                  onClick={() => handleRowClick(asset.id)}
+                  sx={{ cursor: 'pointer' }}
+                >
+                  <TableCell>{asset.name}</TableCell>
+                  <TableCell>{asset.symbol || '-'}</TableCell>
+                  <TableCell align="right">
+                    {asset.currentPrice ? `$${asset.currentPrice.toFixed(2)}` : '-'}
+                  </TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{
+                      color: asset.change && asset.change > 0 ? 'success.main' : 'error.main',
+                    }}
+                  >
+                    {asset.change ? asset.change.toFixed(2) : '-'}
+                  </TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{
+                      color: asset.changePercent && asset.changePercent > 0 ? 'success.main' : 'error.main',
+                    }}
+                  >
+                    {asset.changePercent ? `${asset.changePercent.toFixed(2)}%` : '-'}
+                  </TableCell>
+                  <TableCell align="right">
+                    {asset.volume ? asset.volume.toLocaleString() : '-'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Container>
+  );
+}
+
+export default AssetListPage;
