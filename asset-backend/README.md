@@ -1,6 +1,6 @@
-# KStock Reporter
+# Asset Backend
 
-Django 기반 한국 주식 일일 리포트 & 카카오 알림톡 발송 프로젝트입니다.
+Django 기반 자산 관리 백엔드 시스템 - 주식, 암호화폐 데이터 수집 및 리포트 생성 프로젝트입니다.
 
 ## 주요 기능
 
@@ -27,7 +27,7 @@ Django 기반 한국 주식 일일 리포트 & 카카오 알림톡 발송 프로
 ## 프로젝트 구조
 
 ```
-kstock_reporter/
+asset-backend/
 ├── config/                 # Django 설정
 │   ├── settings/           # 환경별 설정 분리
 │   │   ├── __init__.py
