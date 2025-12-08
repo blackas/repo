@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import Stock, DailyPrice
+from .models import Stock, DailyPrice, WeeklyPrice, MonthlyPrice, YearlyPrice
 
 
 @admin.register(Stock)
@@ -81,3 +81,126 @@ class DailyPriceAdmin(admin.ModelAdmin):
             )
         return format_html("거래량: {:,}주", obj.volume)
     formatted_volume.short_description = "거래 정보"
+
+
+@admin.register(WeeklyPrice)
+class WeeklyPriceAdmin(admin.ModelAdmin):
+    list_display = (
+        "stock_info", "trade_date", "close_price",
+        "change_rate_colored", "volume"
+    )
+    list_filter = ("trade_date", "stock__market")
+    search_fields = ("stock__code", "stock__name")
+    date_hierarchy = "trade_date"
+    autocomplete_fields = ["stock"]
+
+    fieldsets = (
+        ("기본 정보", {
+            "fields": ("stock", "trade_date")
+        }),
+        ("가격 정보", {
+            "fields": ("open_price", "high_price", "low_price", "close_price")
+        }),
+        ("변동 정보", {
+            "fields": ("change", "change_rate")
+        }),
+        ("거래 정보", {
+            "fields": ("volume", "amount", "market_cap")
+        }),
+    )
+
+    def stock_info(self, obj):
+        return f"{obj.stock.name} ({obj.stock.code})"
+    stock_info.short_description = "종목"
+
+    def change_rate_colored(self, obj):
+        if obj.change_rate is None:
+            return "-"
+        color = "red" if obj.change_rate > 0 else "blue" if obj.change_rate < 0 else "gray"
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{:+.2f}%</span>',
+            color, obj.change_rate
+        )
+    change_rate_colored.short_description = "등락률"
+
+
+@admin.register(MonthlyPrice)
+class MonthlyPriceAdmin(admin.ModelAdmin):
+    list_display = (
+        "stock_info", "trade_date", "close_price",
+        "change_rate_colored", "volume"
+    )
+    list_filter = ("trade_date", "stock__market")
+    search_fields = ("stock__code", "stock__name")
+    date_hierarchy = "trade_date"
+    autocomplete_fields = ["stock"]
+
+    fieldsets = (
+        ("기본 정보", {
+            "fields": ("stock", "trade_date")
+        }),
+        ("가격 정보", {
+            "fields": ("open_price", "high_price", "low_price", "close_price")
+        }),
+        ("변동 정보", {
+            "fields": ("change", "change_rate")
+        }),
+        ("거래 정보", {
+            "fields": ("volume", "amount", "market_cap")
+        }),
+    )
+
+    def stock_info(self, obj):
+        return f"{obj.stock.name} ({obj.stock.code})"
+    stock_info.short_description = "종목"
+
+    def change_rate_colored(self, obj):
+        if obj.change_rate is None:
+            return "-"
+        color = "red" if obj.change_rate > 0 else "blue" if obj.change_rate < 0 else "gray"
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{:+.2f}%</span>',
+            color, obj.change_rate
+        )
+    change_rate_colored.short_description = "등락률"
+
+
+@admin.register(YearlyPrice)
+class YearlyPriceAdmin(admin.ModelAdmin):
+    list_display = (
+        "stock_info", "trade_date", "close_price",
+        "change_rate_colored", "volume"
+    )
+    list_filter = ("trade_date", "stock__market")
+    search_fields = ("stock__code", "stock__name")
+    date_hierarchy = "trade_date"
+    autocomplete_fields = ["stock"]
+
+    fieldsets = (
+        ("기본 정보", {
+            "fields": ("stock", "trade_date")
+        }),
+        ("가격 정보", {
+            "fields": ("open_price", "high_price", "low_price", "close_price")
+        }),
+        ("변동 정보", {
+            "fields": ("change", "change_rate")
+        }),
+        ("거래 정보", {
+            "fields": ("volume", "amount", "market_cap")
+        }),
+    )
+
+    def stock_info(self, obj):
+        return f"{obj.stock.name} ({obj.stock.code})"
+    stock_info.short_description = "종목"
+
+    def change_rate_colored(self, obj):
+        if obj.change_rate is None:
+            return "-"
+        color = "red" if obj.change_rate > 0 else "blue" if obj.change_rate < 0 else "gray"
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{:+.2f}%</span>',
+            color, obj.change_rate
+        )
+    change_rate_colored.short_description = "등락률"
