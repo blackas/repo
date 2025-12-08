@@ -134,3 +134,48 @@ class CoinCandleQuerySet(models.QuerySet):
     def latest_candles(self, limit=10):
         """최신 캔들 데이터"""
         return self.order_by('-trade_date')[:limit]
+
+
+class WeeklyPriceQuerySet(models.QuerySet, OptimizedQuerySetMixin):
+    """
+    WeeklyPrice 모델용 최적화된 쿼리셋
+    """
+
+    def with_related(self):
+        return self.select_related("stock")
+
+    def for_date(self, date):
+        return self.filter(trade_date=date)
+
+    def for_date_range(self, start_date, end_date):
+        return self.filter(trade_date__range=[start_date, end_date])
+
+
+class MonthlyPriceQuerySet(models.QuerySet, OptimizedQuerySetMixin):
+    """
+    MonthlyPrice 모델용 최적화된 쿼리셋
+    """
+
+    def with_related(self):
+        return self.select_related("stock")
+
+    def for_date(self, date):
+        return self.filter(trade_date=date)
+
+    def for_date_range(self, start_date, end_date):
+        return self.filter(trade_date__range=[start_date, end_date])
+
+
+class YearlyPriceQuerySet(models.QuerySet, OptimizedQuerySetMixin):
+    """
+    YearlyPrice 모델용 최적화된 쿼리셋
+    """
+
+    def with_related(self):
+        return self.select_related("stock")
+
+    def for_date(self, date):
+        return self.filter(trade_date=date)
+
+    def for_date_range(self, start_date, end_date):
+        return self.filter(trade_date__range=[start_date, end_date])

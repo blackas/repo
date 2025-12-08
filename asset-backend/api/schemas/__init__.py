@@ -22,6 +22,7 @@ from .watchlist import (
 )
 from .report import DailyReportBase, DailyReportInDB, DailyReportResponse
 from .pagination import PaginatedResponse
+from .crypto import CoinResponse, CoinCandleResponse
 
 __all__ = [
     "Token",
@@ -56,4 +57,6 @@ __all__ = [
     "DailyReportInDB",
     "DailyReportResponse",
     "PaginatedResponse",
+    "CoinResponse",
+    "CoinCandleResponse",
 ]

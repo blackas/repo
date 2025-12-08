@@ -149,12 +149,12 @@ class CoinCollectionConfigAdmin(admin.ModelAdmin):
 @admin.register(CoinCandle)
 class CoinCandleAdmin(admin.ModelAdmin):
     """암호화폐 캔들 데이터 조회"""
-    list_display = ('coin', 'trade_date', 'close_price_display', 'volume_display', 'created_at')
-    list_filter = ('trade_date', 'created_at')
+    list_display = ('coin', 'candle_type_display', 'trade_date', 'close_price_display', 'volume_display', 'created_at')
+    list_filter = ('candle_type', 'trade_date', 'created_at')
     search_fields = ('coin__market_code', 'coin__korean_name')
     date_hierarchy = 'trade_date'
     ordering = ('-trade_date', 'coin__market_code')
-    readonly_fields = ('coin', 'trade_date', 'open_price', 'high_price', 'low_price',
+    readonly_fields = ('coin', 'candle_type', 'trade_date', 'open_price', 'high_price', 'low_price',
                       'close_price', 'volume', 'candle_acc_trade_volume', 'created_at', 'updated_at')
 
     # 수정 불가 (조회만 가능)
@@ -166,7 +166,7 @@ class CoinCandleAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('기본 정보', {
-            'fields': ('coin', 'trade_date')
+            'fields': ('coin', 'candle_type', 'trade_date')
         }),
         ('가격 정보', {
             'fields': ('open_price', 'high_price', 'low_price', 'close_price')
@@ -179,6 +179,12 @@ class CoinCandleAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+    def candle_type_display(self, obj):
+        """캔들 타입 표시"""
+        candle_types = {'days': '일봉', 'weeks': '주봉', 'months': '월봉'}
+        return candle_types.get(obj.candle_type, obj.candle_type)
+    candle_type_display.short_description = '캔들 타입'
 
     def close_price_display(self, obj):
         """종가 표시 (천단위 구분)"""

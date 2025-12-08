@@ -133,6 +133,7 @@ def fetch_coin_candles(
                     # 캔들 데이터 저장
                     candle, created = CoinCandle.objects.update_or_create(
                         coin=coin,
+                        candle_type=candle_type,
                         trade_date=trade_date,
                         defaults={
                             'open_price': Decimal(str(row['open'])),

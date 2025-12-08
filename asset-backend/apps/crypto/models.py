@@ -25,8 +25,16 @@ class Coin(models.Model):
 
 
 class CoinCandle(models.Model):
-    """암호화폐 일봉 캔들 데이터"""
+    """암호화폐 캔들 데이터 (일봉/주봉/월봉)"""
+
+    CANDLE_TYPE_CHOICES = [
+        ('days', '일봉'),
+        ('weeks', '주봉'),
+        ('months', '월봉'),
+    ]
+
     coin = models.ForeignKey(Coin, on_delete=models.CASCADE, related_name='candles', verbose_name="코인")
+    candle_type = models.CharField("캔들 타입", max_length=10, choices=CANDLE_TYPE_CHOICES, default='days', db_index=True)
     trade_date = models.DateField("거래일", db_index=True)
 
     open_price = models.DecimalField("시가", max_digits=20, decimal_places=8)
@@ -46,14 +54,15 @@ class CoinCandle(models.Model):
         db_table = 'crypto_coin_candle'
         verbose_name = '암호화폐 캔들'
         verbose_name_plural = '암호화폐 캔들 데이터'
-        unique_together = ('coin', 'trade_date')
+        unique_together = ('coin', 'candle_type', 'trade_date')
         ordering = ['-trade_date']
         indexes = [
-            models.Index(fields=['coin', '-trade_date']),
+            models.Index(fields=['coin', 'candle_type', '-trade_date']),
         ]
 
     def __str__(self):
-        return f"{self.coin.market_code} - {self.trade_date}"
+        candle_type_display = dict(self.CANDLE_TYPE_CHOICES).get(self.candle_type, self.candle_type)
+        return f"{self.coin.market_code} - {self.trade_date} ({candle_type_display})"
 
 
 class CoinCollectionConfig(models.Model):
