@@ -1,0 +1,1155 @@
+================================================================================
+Frontend OAuth 2.0 인증 시스템 구현 계획
+================================================================================
+작성일: 2025-12-08
+프로젝트: asset-frontend
+목적: OAuth 2.0 표준을 따르는 웹 클라이언트 인증 구현
+
+================================================================================
+1. 개요
+================================================================================
+
+현재 상태:
+- React + TypeScript + Vite
+- Material-UI (MUI) 사용
+- axios 인터셉터에 기본 토큰 처리 구현됨 (api.ts)
+- 로그인 페이지 미구현
+- localStorage에 authToken 저장 (api.ts:16)
+
+목표:
+- OAuth 2.0 클라이언트 구현
+- Access Token + Refresh Token 지원
+- 자동 토큰 갱신
+- Protected Route 구현
+- 사용자 인증 상태 관리
+
+================================================================================
+2. 기술 스택
+================================================================================
+
+현재 사용 중:
+- React 18
+- TypeScript
+- React Router v6
+- Material-UI (MUI)
+- axios
+- zustand (상태 관리 - store/useStore.ts)
+
+추가 필요:
+- react-hook-form (폼 관리)
+- zod (유효성 검증)
+
+================================================================================
+3. 폴더 구조
+================================================================================
+
+src/
+├── components/
+│   ├── auth/
+│   │   ├── LoginForm.tsx           # 새로 추가
+│   │   ├── RegisterForm.tsx        # 새로 추가
+│   │   └── ProtectedRoute.tsx      # 새로 추가
+│   └── layout/
+│       └── MainLayout.tsx          # 수정: 로그인 상태 표시
+├── contexts/
+│   └── AuthContext.tsx             # 새로 추가
+├── pages/
+│   ├── LoginPage.tsx               # 새로 추가
+│   ├── RegisterPage.tsx            # 새로 추가
+│   ├── Dashboard.tsx               # 기존 유지
+│   └── ...
+├── services/
+│   ├── api.ts                      # 수정: refresh token 로직
+│   └── authService.ts              # 새로 추가: 인증 API
+├── store/
+│   └── useAuthStore.ts             # 새로 추가: 인증 상태
+├── types/
+│   ├── index.ts                    # 기존
+│   └── auth.ts                     # 새로 추가: 인증 타입
+└── utils/
+    └── tokenStorage.ts             # 새로 추가: 토큰 관리
+
+================================================================================
+4. 타입 정의
+================================================================================
+
+4.1 인증 관련 타입 (src/types/auth.ts)
+--------------------------------------
+
+export interface LoginRequest {
+  grant_type: 'password';
+  username: string;
+  password: string;
+  device_type?: 'web' | 'ios' | 'android';
+  device_id?: string;
+}
+
+export interface RefreshTokenRequest {
+  grant_type: 'refresh_token';
+  refresh_token: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  refresh_expires_in: number;
+}
+
+export interface RegisterRequest {
+  username: string;
+  email: string;
+  password: string;
+  phone_number?: string;
+  receive_daily_report?: boolean;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  phone_number?: string;
+  receive_daily_report: boolean;
+}
+
+export interface UserInfoResponse {
+  sub: string;
+  username: string;
+  email?: string;
+  phone_number?: string;
+  email_verified: boolean;
+}
+
+export interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}
+
+================================================================================
+5. 토큰 관리 유틸리티
+================================================================================
+
+5.1 토큰 저장소 (src/utils/tokenStorage.ts)
+-------------------------------------------
+
+const ACCESS_TOKEN_KEY = 'access_token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
+const TOKEN_EXPIRY_KEY = 'token_expiry';
+
+export const tokenStorage = {
+  /**
+   * Access Token 저장
+   */
+  setAccessToken(token: string, expiresIn: number) {
+    localStorage.setItem(ACCESS_TOKEN_KEY, token);
+
+    // 만료 시간 계산 (현재 시간 + expiresIn - 60초 버퍼)
+    const expiryTime = Date.now() + (expiresIn - 60) * 1000;
+    localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
+  },
+
+  /**
+   * Access Token 가져오기
+   */
+  getAccessToken(): string | null {
+    return localStorage.getItem(ACCESS_TOKEN_KEY);
+  },
+
+  /**
+   * Refresh Token 저장
+   */
+  setRefreshToken(token: string) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, token);
+  },
+
+  /**
+   * Refresh Token 가져오기
+   */
+  getRefreshToken(): string | null {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
+  },
+
+  /**
+   * 토큰 만료 확인
+   */
+  isTokenExpired(): boolean {
+    const expiryTime = localStorage.getItem(TOKEN_EXPIRY_KEY);
+    if (!expiryTime) return true;
+
+    return Date.now() >= parseInt(expiryTime);
+  },
+
+  /**
+   * 모든 토큰 삭제
+   */
+  clearTokens() {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+  },
+
+  /**
+   * 토큰 저장 (access + refresh)
+   */
+  setTokens(tokenResponse: TokenResponse) {
+    this.setAccessToken(tokenResponse.access_token, tokenResponse.expires_in);
+    this.setRefreshToken(tokenResponse.refresh_token);
+  }
+};
+
+================================================================================
+6. 인증 서비스
+================================================================================
+
+6.1 인증 API (src/services/authService.ts)
+------------------------------------------
+
+import axiosInstance from './api';
+import type {
+  LoginRequest,
+  RefreshTokenRequest,
+  TokenResponse,
+  RegisterRequest,
+  User,
+  UserInfoResponse
+} from '../types/auth';
+
+export const authService = {
+  /**
+   * 로그인
+   */
+  async login(username: string, password: string): Promise<TokenResponse> {
+    const request: LoginRequest = {
+      grant_type: 'password',
+      username,
+      password,
+      device_type: 'web',
+      device_id: `web-${Date.now()}`
+    };
+
+    const response = await axiosInstance.post<TokenResponse>('/auth/token', request);
+    return response.data;
+  },
+
+  /**
+   * Refresh Token으로 갱신
+   */
+  async refreshToken(refreshToken: string): Promise<TokenResponse> {
+    const request: RefreshTokenRequest = {
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken
+    };
+
+    const response = await axiosInstance.post<TokenResponse>('/auth/token', request);
+    return response.data;
+  },
+
+  /**
+   * 회원가입
+   */
+  async register(data: RegisterRequest): Promise<User> {
+    const response = await axiosInstance.post<User>('/auth/register', data);
+    return response.data;
+  },
+
+  /**
+   * 현재 사용자 정보 가져오기
+   */
+  async getUserInfo(): Promise<UserInfoResponse> {
+    const response = await axiosInstance.get<UserInfoResponse>('/auth/userinfo');
+    return response.data;
+  },
+
+  /**
+   * 로그아웃
+   */
+  async logout(): Promise<void> {
+    await axiosInstance.post('/auth/logout');
+  },
+
+  /**
+   * 토큰 무효화
+   */
+  async revokeToken(token: string): Promise<void> {
+    await axiosInstance.post('/auth/revoke', {
+      token,
+      token_type_hint: 'refresh_token'
+    });
+  }
+};
+
+================================================================================
+7. 상태 관리 (Zustand Store)
+================================================================================
+
+7.1 인증 스토어 (src/store/useAuthStore.ts)
+-------------------------------------------
+
+import { create } from 'zustand';
+import type { User, AuthState } from '../types/auth';
+import { authService } from '../services/authService';
+import { tokenStorage } from '../utils/tokenStorage';
+
+interface AuthStore extends AuthState {
+  // Actions
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (data: any) => Promise<User>;
+  loadUser: () => Promise<void>;
+  setUser: (user: User | null) => void;
+}
+
+export const useAuthStore = create<AuthStore>((set) => ({
+  // Initial state
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+
+  // Login
+  login: async (username, password) => {
+    set({ isLoading: true });
+
+    try {
+      // 1. 토큰 발급
+      const tokenResponse = await authService.login(username, password);
+
+      // 2. 토큰 저장
+      tokenStorage.setTokens(tokenResponse);
+
+      // 3. 사용자 정보 조회
+      const userInfo = await authService.getUserInfo();
+
+      // 4. 상태 업데이트
+      set({
+        user: {
+          id: parseInt(userInfo.sub),
+          username: userInfo.username,
+          email: userInfo.email || '',
+          phone_number: userInfo.phone_number,
+          receive_daily_report: true
+        },
+        isAuthenticated: true,
+        isLoading: false
+      });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  // Logout
+  logout: async () => {
+    try {
+      // 서버에 로그아웃 요청
+      await authService.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // 로컬 토큰 삭제
+      tokenStorage.clearTokens();
+
+      // 상태 초기화
+      set({
+        user: null,
+        isAuthenticated: false
+      });
+    }
+  },
+
+  // Register
+  register: async (data) => {
+    set({ isLoading: true });
+
+    try {
+      const user = await authService.register(data);
+      set({ isLoading: false });
+      return user;
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  // Load user info (앱 시작 시)
+  loadUser: async () => {
+    const accessToken = tokenStorage.getAccessToken();
+
+    if (!accessToken) {
+      set({ isAuthenticated: false, isLoading: false });
+      return;
+    }
+
+    set({ isLoading: true });
+
+    try {
+      const userInfo = await authService.getUserInfo();
+
+      set({
+        user: {
+          id: parseInt(userInfo.sub),
+          username: userInfo.username,
+          email: userInfo.email || '',
+          phone_number: userInfo.phone_number,
+          receive_daily_report: true
+        },
+        isAuthenticated: true,
+        isLoading: false
+      });
+    } catch (error) {
+      // 토큰이 유효하지 않으면 삭제
+      tokenStorage.clearTokens();
+      set({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false
+      });
+    }
+  },
+
+  // Set user
+  setUser: (user) => {
+    set({ user, isAuthenticated: !!user });
+  }
+}));
+
+================================================================================
+8. Axios 인터셉터 수정
+================================================================================
+
+8.1 API 클라이언트 (src/services/api.ts)
+----------------------------------------
+
+import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
+import { tokenStorage } from '../utils/tokenStorage';
+import { authService } from './authService';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1';
+
+const axiosInstance: AxiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// 토큰 갱신 중인지 추적
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+// 토큰 갱신 완료 시 대기 중인 요청들에게 알림
+function onRefreshed(token: string) {
+  refreshSubscribers.forEach((callback) => callback(token));
+  refreshSubscribers = [];
+}
+
+// 토큰 갱신 대기 큐에 추가
+function addRefreshSubscriber(callback: (token: string) => void) {
+  refreshSubscribers.push(callback);
+}
+
+// Request interceptor
+axiosInstance.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    const token = tokenStorage.getAccessToken();
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // 401 에러이고, 재시도하지 않은 요청인 경우
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      // 로그인 페이지로 리다이렉트해야 하는 경우
+      if (originalRequest.url?.includes('/auth/token') || originalRequest.url?.includes('/auth/userinfo')) {
+        tokenStorage.clearTokens();
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      originalRequest._retry = true;
+
+      // 이미 토큰 갱신 중이면 대기
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          addRefreshSubscriber((token: string) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(axiosInstance(originalRequest));
+          });
+        });
+      }
+
+      isRefreshing = true;
+
+      try {
+        const refreshToken = tokenStorage.getRefreshToken();
+
+        if (!refreshToken) {
+          throw new Error('No refresh token');
+        }
+
+        // Refresh Token으로 새 Access Token 발급
+        const tokenResponse = await authService.refreshToken(refreshToken);
+
+        // 새 토큰 저장
+        tokenStorage.setTokens(tokenResponse);
+
+        // 대기 중인 요청들에게 알림
+        onRefreshed(tokenResponse.access_token);
+
+        // 원래 요청 재시도
+        originalRequest.headers.Authorization = `Bearer ${tokenResponse.access_token}`;
+        return axiosInstance(originalRequest);
+
+      } catch (refreshError) {
+        // Refresh Token도 만료됨 -> 로그아웃
+        tokenStorage.clearTokens();
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+// ... 기존 apiService는 유지 ...
+
+export default axiosInstance;
+
+================================================================================
+9. UI 컴포넌트
+================================================================================
+
+9.1 로그인 폼 (src/components/auth/LoginForm.tsx)
+-------------------------------------------------
+
+import { useState } from 'react';
+import {
+  Box,
+  TextField,
+  Button,
+  Typography,
+  Alert,
+  CircularProgress
+} from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../../store/useAuthStore';
+
+export default function LoginForm() {
+  const navigate = useNavigate();
+  const { login, isLoading } = useAuthStore();
+
+  const [formData, setFormData] = useState({
+    username: '',
+    password: ''
+  });
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    try {
+      await login(formData.username, formData.password);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Login failed');
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  return (
+    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
+      <Typography variant="h5" gutterBottom>
+        Login
+      </Typography>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      <TextField
+        margin="normal"
+        required
+        fullWidth
+        id="username"
+        label="Username or Email"
+        name="username"
+        autoComplete="username"
+        autoFocus
+        value={formData.username}
+        onChange={handleChange}
+        disabled={isLoading}
+      />
+
+      <TextField
+        margin="normal"
+        required
+        fullWidth
+        name="password"
+        label="Password"
+        type="password"
+        id="password"
+        autoComplete="current-password"
+        value={formData.password}
+        onChange={handleChange}
+        disabled={isLoading}
+      />
+
+      <Button
+        type="submit"
+        fullWidth
+        variant="contained"
+        sx={{ mt: 3, mb: 2 }}
+        disabled={isLoading}
+      >
+        {isLoading ? <CircularProgress size={24} /> : 'Sign In'}
+      </Button>
+    </Box>
+  );
+}
+
+
+9.2 회원가입 폼 (src/components/auth/RegisterForm.tsx)
+-----------------------------------------------------
+
+import { useState } from 'react';
+import {
+  Box,
+  TextField,
+  Button,
+  Typography,
+  Alert,
+  FormControlLabel,
+  Checkbox,
+  CircularProgress
+} from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../../store/useAuthStore';
+
+export default function RegisterForm() {
+  const navigate = useNavigate();
+  const { register, isLoading } = useAuthStore();
+
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    phone_number: '',
+    receive_daily_report: true
+  });
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    // 비밀번호 확인
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    try {
+      await register({
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+        phone_number: formData.phone_number || undefined,
+        receive_daily_report: formData.receive_daily_report
+      });
+
+      // 회원가입 성공 -> 로그인 페이지로
+      navigate('/login');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Registration failed');
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    setFormData({
+      ...formData,
+      [name]: type === 'checkbox' ? checked : value
+    });
+  };
+
+  return (
+    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
+      <Typography variant="h5" gutterBottom>
+        Register
+      </Typography>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      <TextField
+        margin="normal"
+        required
+        fullWidth
+        name="username"
+        label="Username"
+        value={formData.username}
+        onChange={handleChange}
+        disabled={isLoading}
+      />
+
+      <TextField
+        margin="normal"
+        required
+        fullWidth
+        name="email"
+        label="Email"
+        type="email"
+        value={formData.email}
+        onChange={handleChange}
+        disabled={isLoading}
+      />
+
+      <TextField
+        margin="normal"
+        required
+        fullWidth
+        name="password"
+        label="Password"
+        type="password"
+        value={formData.password}
+        onChange={handleChange}
+        disabled={isLoading}
+      />
+
+      <TextField
+        margin="normal"
+        required
+        fullWidth
+        name="confirmPassword"
+        label="Confirm Password"
+        type="password"
+        value={formData.confirmPassword}
+        onChange={handleChange}
+        disabled={isLoading}
+      />
+
+      <TextField
+        margin="normal"
+        fullWidth
+        name="phone_number"
+        label="Phone Number"
+        value={formData.phone_number}
+        onChange={handleChange}
+        disabled={isLoading}
+      />
+
+      <FormControlLabel
+        control={
+          <Checkbox
+            name="receive_daily_report"
+            checked={formData.receive_daily_report}
+            onChange={handleChange}
+            disabled={isLoading}
+          />
+        }
+        label="Receive daily reports"
+      />
+
+      <Button
+        type="submit"
+        fullWidth
+        variant="contained"
+        sx={{ mt: 3, mb: 2 }}
+        disabled={isLoading}
+      >
+        {isLoading ? <CircularProgress size={24} /> : 'Register'}
+      </Button>
+    </Box>
+  );
+}
+
+
+9.3 Protected Route (src/components/auth/ProtectedRoute.tsx)
+------------------------------------------------------------
+
+import { Navigate } from 'react-router-dom';
+import { useAuthStore } from '../../store/useAuthStore';
+import { CircularProgress, Box } from '@mui/material';
+
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+}
+
+export default function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const { isAuthenticated, isLoading } = useAuthStore();
+
+  if (isLoading) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="100vh"
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+================================================================================
+10. 페이지 컴포넌트
+================================================================================
+
+10.1 로그인 페이지 (src/pages/LoginPage.tsx)
+--------------------------------------------
+
+import { Container, Paper, Box, Link as MuiLink } from '@mui/material';
+import { Link } from 'react-router-dom';
+import LoginForm from '../components/auth/LoginForm';
+
+export default function LoginPage() {
+  return (
+    <Container component="main" maxWidth="xs">
+      <Box
+        sx={{
+          marginTop: 8,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}
+      >
+        <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
+          <LoginForm />
+
+          <Box sx={{ mt: 2, textAlign: 'center' }}>
+            <MuiLink component={Link} to="/register" variant="body2">
+              Don't have an account? Sign Up
+            </MuiLink>
+          </Box>
+        </Paper>
+      </Box>
+    </Container>
+  );
+}
+
+
+10.2 회원가입 페이지 (src/pages/RegisterPage.tsx)
+-------------------------------------------------
+
+import { Container, Paper, Box, Link as MuiLink } from '@mui/material';
+import { Link } from 'react-router-dom';
+import RegisterForm from '../components/auth/RegisterForm';
+
+export default function RegisterPage() {
+  return (
+    <Container component="main" maxWidth="xs">
+      <Box
+        sx={{
+          marginTop: 8,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}
+      >
+        <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
+          <RegisterForm />
+
+          <Box sx={{ mt: 2, textAlign: 'center' }}>
+            <MuiLink component={Link} to="/login" variant="body2">
+              Already have an account? Sign In
+            </MuiLink>
+          </Box>
+        </Paper>
+      </Box>
+    </Container>
+  );
+}
+
+================================================================================
+11. App.tsx 수정
+================================================================================
+
+11.1 라우팅 설정 (src/App.tsx)
+------------------------------
+
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { useEffect } from 'react';
+
+import MainLayout from './components/layout/MainLayout';
+import Dashboard from './pages/Dashboard';
+import AssetListPage from './pages/AssetListPage';
+import AssetDetailPage from './pages/AssetDetailPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+
+import { useAuthStore } from './store/useAuthStore';
+
+const theme = createTheme({
+  palette: {
+    mode: 'light',
+    primary: {
+      main: '#1976d2',
+    },
+    secondary: {
+      main: '#dc004e',
+    },
+  },
+});
+
+function App() {
+  const { loadUser } = useAuthStore();
+
+  // 앱 시작 시 사용자 정보 로드
+  useEffect(() => {
+    loadUser();
+  }, [loadUser]);
+
+  return (
+    <ThemeProvider theme={theme}>
+      <BrowserRouter>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          {/* Protected routes */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Dashboard />} />
+            <Route
+              path="assets/kr-stock"
+              element={<AssetListPage assetType="kr-stock" title="Korean Stocks" />}
+            />
+            <Route
+              path="assets/us-stock"
+              element={<AssetListPage assetType="us-stock" title="US Stocks" />}
+            />
+            <Route
+              path="assets/crypto"
+              element={<AssetListPage assetType="crypto" title="Cryptocurrencies" />}
+            />
+            <Route path="assets/:assetType/:assetId" element={<AssetDetailPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
+  );
+}
+
+export default App;
+
+================================================================================
+12. MainLayout 수정 (로그아웃 버튼 추가)
+================================================================================
+
+12.1 레이아웃 업데이트 (src/components/layout/MainLayout.tsx)
+------------------------------------------------------------
+
+// 기존 코드에 추가:
+import { useAuthStore } from '../../store/useAuthStore';
+import { Button } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+
+// AppBar에 로그아웃 버튼 추가
+const { user, logout } = useAuthStore();
+const navigate = useNavigate();
+
+const handleLogout = async () => {
+  await logout();
+  navigate('/login');
+};
+
+// AppBar 컴포넌트 내부:
+<Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+  <Typography variant="body2">
+    {user?.username}
+  </Typography>
+  <Button color="inherit" onClick={handleLogout}>
+    Logout
+  </Button>
+</Box>
+
+================================================================================
+13. 환경 변수
+================================================================================
+
+13.1 .env 파일
+--------------
+
+VITE_API_BASE_URL=http://localhost:8001/api/v1
+
+프로덕션:
+VITE_API_BASE_URL=https://api.yourdomain.com/api/v1
+
+================================================================================
+14. 패키지 설치
+================================================================================
+
+npm install react-hook-form zod @hookform/resolvers
+
+(선택사항 - 현재는 기본 폼만 사용)
+
+================================================================================
+15. 테스트 시나리오
+================================================================================
+
+1. 회원가입
+   - /register 페이지에서 회원가입
+   - 유효성 검증 테스트
+   - 성공 시 /login으로 리다이렉트
+
+2. 로그인
+   - /login 페이지에서 로그인
+   - 잘못된 비밀번호 에러 확인
+   - 성공 시 / (Dashboard)로 리다이렉트
+
+3. 보호된 라우트
+   - 로그인하지 않고 / 접근 시 /login으로 리다이렉트
+   - 로그인 후 모든 페이지 접근 가능
+
+4. 자동 토큰 갱신
+   - 1시간 후 API 호출 시 자동으로 토큰 갱신
+   - 갱신 실패 시 로그인 페이지로 리다이렉트
+
+5. 로그아웃
+   - 로그아웃 버튼 클릭
+   - 토큰 삭제 확인
+   - /login으로 리다이렉트
+
+================================================================================
+16. 구현 순서
+================================================================================
+
+Phase 1: 타입 및 유틸리티
+1. src/types/auth.ts 생성
+2. src/utils/tokenStorage.ts 생성
+
+Phase 2: 서비스 레이어
+3. src/services/authService.ts 생성
+4. src/services/api.ts 수정 (인터셉터)
+
+Phase 3: 상태 관리
+5. src/store/useAuthStore.ts 생성
+
+Phase 4: UI 컴포넌트
+6. src/components/auth/LoginForm.tsx
+7. src/components/auth/RegisterForm.tsx
+8. src/components/auth/ProtectedRoute.tsx
+
+Phase 5: 페이지
+9. src/pages/LoginPage.tsx
+10. src/pages/RegisterPage.tsx
+
+Phase 6: 통합
+11. src/App.tsx 수정 (라우팅)
+12. src/components/layout/MainLayout.tsx 수정 (로그아웃)
+
+Phase 7: 테스트
+13. 수동 테스트
+14. 버그 수정
+
+================================================================================
+17. 예상 소요 시간
+================================================================================
+
+Phase 1: 타입 및 유틸리티 - 30분
+Phase 2: 서비스 레이어 - 1시간
+Phase 3: 상태 관리 - 1시간
+Phase 4: UI 컴포넌트 - 2시간
+Phase 5: 페이지 - 1시간
+Phase 6: 통합 - 1시간
+Phase 7: 테스트 - 1시간
+
+총 예상 시간: 약 7.5시간
+
+================================================================================
+18. 향후 개선 사항
+================================================================================
+
+1. React Hook Form + Zod 통합 (폼 검증 강화)
+2. 비밀번호 찾기/재설정 기능
+3. 이메일 인증
+4. 소셜 로그인 (Google, Kakao)
+5. 2FA/MFA
+6. Remember Me 기능
+7. 로딩 스켈레톤 UI
+8. 에러 바운더리
+
+================================================================================
+19. Keycloak 전환 준비
+================================================================================
+
+현재 구현이 OAuth 2.0 표준을 따르므로, Keycloak 전환 시:
+
+변경 필요:
+- authService.ts의 API 엔드포인트만 Keycloak URL로 변경
+- 토큰 형식은 동일 (JWT)
+
+변경 불필요:
+- 컴포넌트 코드
+- 상태 관리 로직
+- 토큰 저장/갱신 로직
+
+================================================================================
+20. 보안 고려사항
+================================================================================
+
+1. XSS 방지
+   - React는 기본적으로 XSS 방지
+   - dangerouslySetInnerHTML 사용 금지
+
+2. CSRF 방지
+   - JWT 기반이므로 CSRF 공격 위험 낮음
+   - 중요 작업은 재인증 요구
+
+3. 토큰 보안
+   - localStorage 사용 (XSS 위험)
+   - httpOnly 쿠키 사용 고려 (향후)
+   - HTTPS 필수
+
+4. 비밀번호 정책
+   - 최소 8자
+   - 대소문자, 숫자, 특수문자 포함 (향후)
+
+================================================================================
+EOF
+================================================================================

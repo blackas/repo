@@ -1,0 +1,733 @@
+================================================================================
+Backend OAuth 2.0 인증 시스템 구현 계획
+================================================================================
+작성일: 2025-12-08
+프로젝트: asset-backend
+목적: Keycloak 마이그레이션을 고려한 OAuth 2.0 표준 준수 인증 시스템 구축
+
+================================================================================
+1. 개요
+================================================================================
+
+현재 상태:
+- FastAPI + Django 하이브리드 구조
+- 기본 JWT 인증 구현됨 (api/v1/auth.py)
+- Access Token만 사용 (24시간 유효)
+- 토큰 무효화 불가능
+
+목표:
+- OAuth 2.0 표준 준수 (향후 Keycloak 전환 용이)
+- Refresh Token 도입으로 보안 강화
+- 멀티 플랫폼 지원 (Web, iOS, Android)
+- 토큰 무효화 기능 (로그아웃)
+
+================================================================================
+2. 기술 스택
+================================================================================
+
+현재 사용 중:
+- FastAPI (API 서버)
+- Django ORM (데이터베이스)
+- PyJWT (JWT 생성/검증)
+- python-jose (현재 dependencies.py에서 사용)
+
+추가 필요:
+- 없음 (기존 라이브러리로 충분)
+
+================================================================================
+3. 데이터베이스 변경사항
+================================================================================
+
+3.1 RefreshToken 모델 생성
+--------------------------
+위치: apps/accounts/models.py
+
+class RefreshToken(models.Model):
+    """
+    Refresh Token 저장 모델
+    - 사용자별 refresh token 관리
+    - 토큰 무효화 지원
+    - 만료 시간 관리
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='refresh_tokens'
+    )
+    token = models.CharField(
+        max_length=500,
+        unique=True,
+        db_index=True
+    )
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    # 디바이스 정보 (선택사항)
+    device_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('web', 'Web'),
+            ('ios', 'iOS'),
+            ('android', 'Android'),
+        ],
+        null=True,
+        blank=True
+    )
+    device_id = models.CharField(max_length=255, null=True, blank=True)
+
+    class Meta:
+        db_table = 'refresh_tokens'
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def is_valid(self):
+        from django.utils import timezone
+        return (
+            self.revoked_at is None and
+            self.expires_at > timezone.now()
+        )
+
+    def revoke(self):
+        from django.utils import timezone
+        self.revoked_at = timezone.now()
+        self.save()
+
+
+3.2 마이그레이션
+----------------
+파일명: apps/accounts/migrations/0003_add_refresh_token.py
+
+python manage.py makemigrations accounts
+python manage.py migrate accounts
+
+================================================================================
+4. API 엔드포인트 설계 (OAuth 2.0 표준)
+================================================================================
+
+4.1 토큰 발급 (Token Endpoint)
+------------------------------
+POST /api/v1/auth/token
+
+현재: /api/v1/auth/login
+변경: OAuth 2.0 표준 엔드포인트
+
+요청 (grant_type=password):
+{
+    "grant_type": "password",
+    "username": "user@example.com",
+    "password": "password123",
+    "device_type": "web",  // optional
+    "device_id": "browser-uuid"  // optional
+}
+
+요청 (grant_type=refresh_token):
+{
+    "grant_type": "refresh_token",
+    "refresh_token": "eyJ..."
+}
+
+응답:
+{
+    "access_token": "eyJ...",
+    "refresh_token": "eyJ...",
+    "token_type": "Bearer",
+    "expires_in": 3600,  // seconds
+    "refresh_expires_in": 604800  // 7 days
+}
+
+
+4.2 토큰 무효화 (Revoke Endpoint)
+---------------------------------
+POST /api/v1/auth/revoke
+
+요청:
+{
+    "token": "eyJ...",
+    "token_type_hint": "refresh_token"  // optional
+}
+
+응답:
+{
+    "message": "Token revoked successfully"
+}
+
+
+4.3 사용자 정보 (UserInfo Endpoint - OIDC)
+------------------------------------------
+GET /api/v1/auth/userinfo
+Authorization: Bearer {access_token}
+
+응답:
+{
+    "sub": "123",  // user_id
+    "username": "user@example.com",
+    "email": "user@example.com",
+    "phone_number": "+82-10-1234-5678",
+    "email_verified": true
+}
+
+
+4.4 회원가입 (기존 유지)
+------------------------
+POST /api/v1/auth/register
+
+요청:
+{
+    "username": "user@example.com",
+    "email": "user@example.com",
+    "password": "password123",
+    "phone_number": "+82-10-1234-5678",
+    "receive_daily_report": true
+}
+
+응답:
+{
+    "id": 123,
+    "username": "user@example.com",
+    "email": "user@example.com",
+    ...
+}
+
+================================================================================
+5. 구현 상세
+================================================================================
+
+5.1 파일 구조
+-------------
+apps/accounts/
+├── models.py                    # RefreshToken 모델 추가
+├── migrations/
+│   └── 0003_add_refresh_token.py
+└── services/
+    └── auth_service.py          # 새 파일: 인증 비즈니스 로직
+
+api/
+├── dependencies.py              # 수정: 토큰 검증 로직
+├── schemas/
+│   └── auth.py                  # 수정: OAuth 2.0 스키마
+└── v1/
+    └── auth.py                  # 수정: OAuth 2.0 엔드포인트
+
+
+5.2 스키마 정의 (api/schemas/auth.py)
+-------------------------------------
+
+from pydantic import BaseModel, Field
+from typing import Optional, Literal
+
+class TokenRequest(BaseModel):
+    """OAuth 2.0 Token Request"""
+    grant_type: Literal["password", "refresh_token"]
+
+    # For password grant
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+    # For refresh_token grant
+    refresh_token: Optional[str] = None
+
+    # Optional device info
+    device_type: Optional[Literal["web", "ios", "android"]] = None
+    device_id: Optional[str] = None
+
+
+class TokenResponse(BaseModel):
+    """OAuth 2.0 Token Response"""
+    access_token: str
+    refresh_token: str
+    token_type: str = "Bearer"
+    expires_in: int  # seconds
+    refresh_expires_in: int
+
+
+class TokenRevokeRequest(BaseModel):
+    """Token Revocation Request"""
+    token: str
+    token_type_hint: Optional[Literal["access_token", "refresh_token"]] = None
+
+
+class UserInfoResponse(BaseModel):
+    """OIDC UserInfo Response"""
+    sub: str  # user_id
+    username: str
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    email_verified: bool = False
+
+
+5.3 인증 서비스 (apps/accounts/services/auth_service.py)
+--------------------------------------------------------
+
+from datetime import timedelta, datetime, timezone
+from typing import Optional, Tuple
+from django.contrib.auth import authenticate
+from jose import jwt
+import secrets
+
+from apps.accounts.models import User, RefreshToken
+from api.dependencies import SECRET_KEY, ALGORITHM
+
+# 토큰 유효기간
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1시간
+REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7일
+
+
+class AuthService:
+    """인증 관련 비즈니스 로직"""
+
+    @staticmethod
+    def create_access_token(user: User) -> Tuple[str, int]:
+        """Access Token 생성"""
+        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + expires_delta
+
+        to_encode = {
+            "user_id": user.id,
+            "username": user.username,
+            "exp": expire,
+            "type": "access"
+        }
+
+        token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        return token, int(expires_delta.total_seconds())
+
+    @staticmethod
+    def create_refresh_token(
+        user: User,
+        device_type: Optional[str] = None,
+        device_id: Optional[str] = None
+    ) -> Tuple[str, int]:
+        """Refresh Token 생성 및 DB 저장"""
+        expires_delta = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        expire = datetime.now(timezone.utc) + expires_delta
+
+        # 고유한 jti (JWT ID) 생성
+        jti = secrets.token_urlsafe(32)
+
+        to_encode = {
+            "user_id": user.id,
+            "jti": jti,
+            "exp": expire,
+            "type": "refresh"
+        }
+
+        token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+        # DB에 저장
+        RefreshToken.objects.create(
+            user=user,
+            token=jti,  # jti만 저장 (보안)
+            expires_at=expire,
+            device_type=device_type,
+            device_id=device_id
+        )
+
+        return token, int(expires_delta.total_seconds())
+
+    @staticmethod
+    def authenticate_user(username: str, password: str) -> Optional[User]:
+        """사용자 인증"""
+        user = authenticate(username=username, password=password)
+        if user and user.is_active:
+            return user
+        return None
+
+    @staticmethod
+    def verify_refresh_token(token: str) -> Optional[User]:
+        """Refresh Token 검증"""
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+            if payload.get("type") != "refresh":
+                return None
+
+            jti = payload.get("jti")
+            user_id = payload.get("user_id")
+
+            # DB에서 토큰 확인
+            refresh_token = RefreshToken.objects.filter(
+                token=jti,
+                user_id=user_id
+            ).first()
+
+            if not refresh_token or not refresh_token.is_valid():
+                return None
+
+            return refresh_token.user
+
+        except Exception:
+            return None
+
+    @staticmethod
+    def revoke_token(token: str) -> bool:
+        """토큰 무효화"""
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            jti = payload.get("jti")
+
+            if not jti:
+                return False
+
+            refresh_token = RefreshToken.objects.filter(token=jti).first()
+            if refresh_token:
+                refresh_token.revoke()
+                return True
+
+            return False
+        except Exception:
+            return False
+
+    @staticmethod
+    def revoke_all_user_tokens(user: User):
+        """사용자의 모든 토큰 무효화"""
+        RefreshToken.objects.filter(
+            user=user,
+            revoked_at__isnull=True
+        ).update(revoked_at=datetime.now(timezone.utc))
+
+
+5.4 엔드포인트 구현 (api/v1/auth.py)
+-----------------------------------
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from asgiref.sync import sync_to_async
+
+from api.schemas import (
+    TokenRequest, TokenResponse, TokenRevokeRequest,
+    UserInfoResponse, UserCreate, UserResponse
+)
+from api.dependencies import get_current_user
+from apps.accounts.models import User
+from apps.accounts.services.auth_service import AuthService
+
+router = APIRouter(prefix="/auth", tags=["authentication"])
+
+
+@router.post("/token", response_model=TokenResponse)
+async def token(request: TokenRequest):
+    """
+    OAuth 2.0 Token Endpoint
+
+    지원하는 grant_type:
+    - password: 사용자명/비밀번호로 로그인
+    - refresh_token: Refresh Token으로 Access Token 갱신
+    """
+    if request.grant_type == "password":
+        # 비밀번호 인증
+        if not request.username or not request.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="username and password required for password grant"
+            )
+
+        user = await sync_to_async(AuthService.authenticate_user)(
+            request.username, request.password
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Access Token 생성
+        access_token, expires_in = await sync_to_async(
+            AuthService.create_access_token
+        )(user)
+
+        # Refresh Token 생성
+        refresh_token, refresh_expires_in = await sync_to_async(
+            AuthService.create_refresh_token
+        )(user, request.device_type, request.device_id)
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=expires_in,
+            refresh_expires_in=refresh_expires_in
+        )
+
+    elif request.grant_type == "refresh_token":
+        # Refresh Token으로 갱신
+        if not request.refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="refresh_token required for refresh_token grant"
+            )
+
+        user = await sync_to_async(AuthService.verify_refresh_token)(
+            request.refresh_token
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # 새 Access Token 생성
+        access_token, expires_in = await sync_to_async(
+            AuthService.create_access_token
+        )(user)
+
+        # 기존 Refresh Token 재사용
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=request.refresh_token,
+            expires_in=expires_in,
+            refresh_expires_in=0  # 기존 토큰 유지
+        )
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported grant_type: {request.grant_type}"
+        )
+
+
+@router.post("/revoke")
+async def revoke(request: TokenRevokeRequest):
+    """
+    Token Revocation Endpoint
+
+    Refresh Token을 무효화합니다.
+    """
+    success = await sync_to_async(AuthService.revoke_token)(request.token)
+
+    if success:
+        return {"message": "Token revoked successfully"}
+    else:
+        return {"message": "Token not found or already revoked"}
+
+
+@router.get("/userinfo", response_model=UserInfoResponse)
+async def userinfo(current_user: User = Depends(get_current_user)):
+    """
+    OIDC UserInfo Endpoint
+
+    현재 인증된 사용자의 정보를 반환합니다.
+    """
+    return UserInfoResponse(
+        sub=str(current_user.id),
+        username=current_user.username,
+        email=current_user.email,
+        phone_number=current_user.phone_number,
+        email_verified=bool(current_user.email)
+    )
+
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register(user_in: UserCreate):
+    """
+    회원가입 (기존 유지)
+    """
+    # 기존 코드 유지
+    ...
+
+
+@router.post("/logout")
+async def logout(current_user: User = Depends(get_current_user)):
+    """
+    로그아웃 (모든 Refresh Token 무효화)
+    """
+    await sync_to_async(AuthService.revoke_all_user_tokens)(current_user)
+    return {"message": "Logged out successfully"}
+
+
+5.5 의존성 수정 (api/dependencies.py)
+------------------------------------
+
+# verify_token 함수 수정
+def verify_token(token: str) -> dict:
+    """
+    JWT 토큰 검증
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        # Access Token인지 확인
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+# get_current_user는 기존 유지
+
+================================================================================
+6. 보안 고려사항
+================================================================================
+
+6.1 토큰 보안
+-------------
+- Access Token: 짧은 유효기간 (1시간)
+- Refresh Token: DB에 jti만 저장 (전체 토큰 저장 X)
+- 토큰 무효화 지원 (로그아웃)
+- HTTPS 필수 (프로덕션)
+
+6.2 비밀번호 보안
+----------------
+- Django의 기본 비밀번호 해싱 사용 (PBKDF2)
+- 비밀번호 복잡도 검증 (선택사항)
+
+6.3 Rate Limiting
+-----------------
+- 현재 slowapi 사용 중
+- /auth/token 엔드포인트에 강화된 제한 적용
+
+예시:
+@router.post("/token")
+@limiter.limit("5/minute")  # 1분에 5회 제한
+async def token(...):
+    ...
+
+6.4 CORS 설정
+-------------
+main.py에서 프로덕션 환경에 맞게 수정:
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # 개발
+        "https://yourdomain.com",  # 프로덕션
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+================================================================================
+7. 테스트 계획
+================================================================================
+
+7.1 단위 테스트
+---------------
+파일: api/tests/test_auth.py
+
+테스트 케이스:
+1. 비밀번호 로그인 성공
+2. 잘못된 비밀번호 로그인 실패
+3. Refresh Token으로 토큰 갱신
+4. 만료된 Refresh Token 거부
+5. 무효화된 Refresh Token 거부
+6. 토큰 무효화 (revoke)
+7. 로그아웃 (모든 토큰 무효화)
+8. UserInfo 엔드포인트
+
+7.2 통합 테스트
+---------------
+1. 전체 인증 플로우 테스트
+   - 회원가입 → 로그인 → API 호출 → 토큰 갱신 → 로그아웃
+
+7.3 수동 테스트
+---------------
+FastAPI Swagger UI 사용:
+http://localhost:8001/api/docs
+
+================================================================================
+8. 마이그레이션 및 배포
+================================================================================
+
+8.1 개발 환경 적용
+------------------
+1. 코드 변경사항 적용
+2. 마이그레이션 실행:
+   python manage.py makemigrations
+   python manage.py migrate
+
+3. 서버 재시작:
+   uvicorn main:app --reload --port 8001
+
+8.2 프로덕션 배포
+-----------------
+1. 마이그레이션 실행
+2. 환경변수 확인:
+   - JWT_SECRET_KEY (강력한 시크릿 키 설정)
+   - DJANGO_ENV=production
+
+3. CORS 설정 업데이트
+4. 서버 재시작
+
+================================================================================
+9. Keycloak 마이그레이션 준비사항
+================================================================================
+
+현재 구현이 OAuth 2.0 표준을 따르므로, Keycloak 전환 시:
+
+변경 필요 사항:
+1. /auth/token 엔드포인트 → Keycloak으로 프록시
+2. 토큰 검증 로직 → Keycloak public key 사용
+3. 사용자 동기화 설정 (Keycloak ↔ Django)
+
+변경 불필요:
+- 클라이언트 코드 (프론트엔드, 모바일)
+- API 엔드포인트 구조
+- 토큰 형식 (JWT)
+
+================================================================================
+10. 구현 순서
+================================================================================
+
+Phase 1: 데이터베이스 및 모델
+1. RefreshToken 모델 추가
+2. 마이그레이션 생성 및 실행
+
+Phase 2: 서비스 레이어
+3. apps/accounts/services/auth_service.py 생성
+4. AuthService 클래스 구현
+
+Phase 3: API 스키마
+5. api/schemas/auth.py 수정 (OAuth 2.0 스키마 추가)
+
+Phase 4: 엔드포인트
+6. api/v1/auth.py 수정 (OAuth 2.0 엔드포인트)
+7. api/dependencies.py 수정 (토큰 타입 검증)
+
+Phase 5: 테스트
+8. 단위 테스트 작성
+9. 통합 테스트
+10. Swagger UI로 수동 테스트
+
+Phase 6: 보안 강화
+11. Rate limiting 적용
+12. CORS 설정 업데이트
+
+================================================================================
+11. 예상 소요 시간
+================================================================================
+
+Phase 1: 데이터베이스 - 30분
+Phase 2: 서비스 레이어 - 1시간
+Phase 3: API 스키마 - 30분
+Phase 4: 엔드포인트 - 1.5시간
+Phase 5: 테스트 - 1시간
+Phase 6: 보안 강화 - 30분
+
+총 예상 시간: 약 5시간
+
+================================================================================
+12. 참고 문서
+================================================================================
+
+- OAuth 2.0 RFC: https://datatracker.ietf.org/doc/html/rfc6749
+- OIDC Core: https://openid.net/specs/openid-connect-core-1_0.html
+- FastAPI Security: https://fastapi.tiangolo.com/tutorial/security/
+- Keycloak Documentation: https://www.keycloak.org/documentation
+
+================================================================================
+EOF
+================================================================================
