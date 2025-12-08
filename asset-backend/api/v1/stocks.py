@@ -12,7 +12,7 @@ from api.schemas import (
 )
 from api.dependencies import get_current_user, get_current_active_superuser
 from apps.accounts.models import User
-from apps.stocks.models import Stock, DailyPrice
+from apps.stocks.models import Stock, DailyPrice, WeeklyPrice, MonthlyPrice, YearlyPrice
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -123,14 +123,29 @@ async def update_stock(
 @router.get("/{stock_code}/prices", response_model=List[DailyPriceResponse])
 async def get_stock_prices(
     stock_code: str,
+    candle_type: str = Query(default="daily", description="캔들 타입: daily, weekly, monthly, yearly"),
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = Query(default=30, le=365),
     current_user: User = Depends(get_current_user),
 ):
     """
-    주식 가격 데이터 조회
+    주식 가격 데이터 조회 (다중 시간대 지원)
+
+    candle_type:
+    - daily: 일봉 (기본값)
+    - weekly: 주봉
+    - monthly: 월봉
+    - yearly: 연봉
     """
+    # candle_type 검증
+    valid_candle_types = ["daily", "weekly", "monthly", "yearly"]
+    if candle_type not in valid_candle_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid candle_type. Must be one of: {', '.join(valid_candle_types)}",
+        )
+
     try:
         stock = await sync_to_async(Stock.objects.get)(code=stock_code)
     except Stock.DoesNotExist:
@@ -141,7 +156,15 @@ async def get_stock_prices(
 
     @sync_to_async
     def get_prices():
-        queryset = DailyPrice.objects.filter(stock=stock).select_related("stock")
+        # candle_type에 따라 다른 모델 조회
+        if candle_type == "daily":
+            queryset = DailyPrice.objects.filter(stock=stock).select_related("stock")
+        elif candle_type == "weekly":
+            queryset = WeeklyPrice.objects.filter(stock=stock).select_related("stock")
+        elif candle_type == "monthly":
+            queryset = MonthlyPrice.objects.filter(stock=stock).select_related("stock")
+        else:  # yearly
+            queryset = YearlyPrice.objects.filter(stock=stock).select_related("stock")
 
         if start_date:
             queryset = queryset.filter(trade_date__gte=start_date)
