@@ -60,8 +60,8 @@ ASGI_APPLICATION = "config.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB", "kstock"),
-        "USER": os.getenv("POSTGRES_USER", "kstock_user"),
+        "NAME": os.getenv("POSTGRES_DB", "asset"),
+        "USER": os.getenv("POSTGRES_USER", "asset_user"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD", "password"),
         "HOST": os.getenv("POSTGRES_HOST", "localhost"),
         "PORT": os.getenv("POSTGRES_PORT", "5432"),
@@ -150,7 +150,7 @@ CACHES = {
                 "timeout": 20,
             },
         },
-        "KEY_PREFIX": "kstock",
+        "KEY_PREFIX": "asset",
         "TIMEOUT": 900,  # 15분 기본 타임아웃
     }
 }

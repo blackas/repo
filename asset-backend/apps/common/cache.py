@@ -14,7 +14,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 # 캐시 키 프리픽스
-CACHE_PREFIX = "kstock:"
+CACHE_PREFIX = "noah-asset:"
 
 # 기본 캐시 타임아웃 (초)
 DEFAULT_TIMEOUT = 60 * 15  # 15분

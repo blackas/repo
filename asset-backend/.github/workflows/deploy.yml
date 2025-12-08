@@ -16,7 +16,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     environment:
       name: staging
-      url: https://staging.kstock-reporter.com
+      url: https://staging.noah-asset.com
 
     steps:
     - uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     environment:
       name: production
-      url: https://kstock-reporter.com
+      url: https://noah-asset.com
 
     steps:
     - uses: actions/checkout@v4
