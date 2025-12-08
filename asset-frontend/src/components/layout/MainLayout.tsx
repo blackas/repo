@@ -4,6 +4,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import {
   AppBar,
   Box,
+  Button,
   CssBaseline,
   Drawer,
   IconButton,
@@ -21,7 +22,9 @@ import {
   TrendingUp,
   ShowChart,
   CurrencyBitcoin,
+  Logout as LogoutIcon,
 } from '@mui/icons-material';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const drawerWidth = 240;
 
@@ -41,6 +44,7 @@ const navItems: NavItem[] = [
 function MainLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
+  const { user, logout } = useAuthStore();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -49,6 +53,11 @@ function MainLayout() {
   const handleNavigation = (path: string) => {
     navigate(path);
     setMobileOpen(false);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
   };
 
   const drawer = (
@@ -91,9 +100,21 @@ function MainLayout() {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div">
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             Asset Portfolio Tracker
           </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
+              {user?.username}
+            </Typography>
+            <Button
+              color="inherit"
+              onClick={handleLogout}
+              startIcon={<LogoutIcon />}
+            >
+              Logout
+            </Button>
+          </Box>
         </Toolbar>
       </AppBar>
       <Box
