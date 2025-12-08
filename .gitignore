@@ -9,3 +9,20 @@ CLAUDE.md
 !vovu/orders/landedcosts/shipping/rates/CLAUDE.md
 *.mo
 
+# System files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Todo lists (temporary work files)
+claude_todo_list*.txt
+
+# Environment
+.env
+.env.local
+.env.*.local

@@ -60,8 +60,8 @@ logger = logging.getLogger(__name__)
 
 # FastAPI 앱 생성
 app = FastAPI(
-    title="KStock Reporter API",
-    description="한국 주식 리포트 시스템 REST API",
+    title="NoahAsset Backend API",
+    description="Noah Asset 시스템 REST API",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -138,7 +138,7 @@ async def root():
     API 루트 엔드포인트
     """
     return {
-        "message": "KStock Reporter API",
+        "message": "Noah Asset Backend API",
         "version": "1.0.0",
         "docs": "/api/docs",
     }

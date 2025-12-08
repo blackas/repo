@@ -1,0 +1,3297 @@
+================================================================================
+Flutter 앱 구현 계획 (Asset Folio Mobile)
+================================================================================
+작성일: 2025-12-08
+프로젝트: asset_folio_mobile (Flutter)
+목적: iOS/Android 크로스 플랫폼 자산 관리 모바일 앱 개발
+버전: 3.3 (4차 리뷰 피드백 최종 반영 - 모든 Critical 이슈 수정 완료)
+
+작업 계획 상세 수준: detailed
+detail_level = detailed
+
+변경 이력:
+- v1.0: 초기 작성
+- v2.0: 1차 리뷰 피드백 10개 이슈 수정
+- v3.0: 2차 리뷰 - iOS ATS, router conflict, search API, endpoints (4개 critical 이슈)
+- v3.1: 3차 리뷰 - detail level, dart:async import, asset type conversion, iOS target (4개 blocking 이슈)
+- v3.2: 4차 리뷰 - unreachable code in _getDeviceId() 수정 (1개 critical 이슈)
+- v3.3: 현재 버전 - detail level을 extreme→detailed로 조정 (총 19개 이슈 수정 완료)
+
+🚀 QUICK START (지금 바로 시작하기):
+1. cd /Users/indent/Desktop/Noah/repo/
+2. flutter create asset_folio_mobile --org com.assetfolio --platforms=ios,android
+3. cd asset_folio_mobile
+4. code . (VS Code로 열기)
+5. 이 문서의 Phase 0부터 차근차근 진행
+
+================================================================================
+1. 프로젝트 개요
+================================================================================
+
+1.1 현재 상태
+-------------
+- Backend: FastAPI + Django (OAuth 2.0 인증 구현 완료)
+  - 위치: /Users/indent/Desktop/Noah/repo/asset-backend
+  - API Docs: http://localhost:8001/api/docs
+  - 백엔드 OAuth 2.0 표준 준수 (RFC 6749)
+
+- Frontend: React + TypeScript (웹 버전 구현 완료)
+  - 위치: /Users/indent/Desktop/Noah/repo/asset-frontend
+  - OAuth 2.0 token 기반 인증 사용
+
+- Mobile: 미구현
+
+1.2 목표
+--------
+- Flutter를 사용한 iOS/Android 크로스 플랫폼 앱 개발
+- 백엔드 OAuth 2.0 API와 완전 통합:
+  - 동일한 /auth/token 엔드포인트 사용
+  - 동일한 JWT 토큰 형식 사용
+  - device_type='ios' 또는 'android'로 구분
+- 웹 프론트엔드와 동일한 기능 제공
+- 네이티브 앱 수준의 UX 제공
+
+1.3 앱 주요 기능
+---------------
+Phase 1 (MVP):
+- 사용자 인증 (회원가입, 로그인, 로그아웃)
+- 자산 목록 조회 (한국 주식, 미국 주식, 암호화폐)
+- 자산 상세 정보 조회
+- 자산 검색
+
+Phase 2 (추후 구현):
+- 관심 목록 (Watchlist)
+- 리포트 조회
+- 푸시 알림
+
+================================================================================
+2. 기술 스택
+================================================================================
+
+2.1 핵심 프레임워크
+------------------
+- Flutter 3.24.0 (정확한 버전 명시)
+- Dart 3.5.0
+
+2.2 주요 패키지
+--------------
+
+상태 관리:
+- riverpod: ^2.5.1
+- flutter_riverpod: ^2.5.1
+
+네트워킹:
+- dio: ^5.4.0
+- json_annotation: ^4.8.1
+- json_serializable: ^6.7.1
+
+보안 저장소:
+- flutter_secure_storage: ^9.0.0
+
+라우팅:
+- go_router: ^14.0.0
+
+환경변수:
+- flutter_dotenv: ^5.1.0
+
+디바이스 정보:
+- device_info_plus: ^10.0.0
+
+UI 컴포넌트:
+- google_fonts: ^6.1.0
+- flutter_svg: ^2.0.9
+- shimmer: ^3.0.0
+
+유틸리티:
+- intl: ^0.19.0
+- logger: ^2.0.2
+
+네트워크 상태:
+- connectivity_plus: ^6.0.0
+
+개발 도구:
+- build_runner: ^2.4.7
+- flutter_lints: ^4.0.0
+
+================================================================================
+3. 프로젝트 구조
+================================================================================
+
+asset_folio_mobile/
+├── lib/
+│   ├── main.dart                      # 앱 엔트리 포인트
+│   │
+│   ├── app/
+│   │   ├── app.dart                   # App 위젯 (MaterialApp)
+│   │   ├── router.dart                # GoRouter 설정
+│   │   └── theme.dart                 # 앱 테마
+│   │
+│   ├── core/
+│   │   ├── config/
+│   │   │   └── env_config.dart        # 환경변수 설정
+│   │   ├── constants/
+│   │   │   ├── api_constants.dart     # API 엔드포인트
+│   │   │   └── app_constants.dart     # 앱 상수
+│   │   ├── network/
+│   │   │   ├── dio_client.dart        # Dio 설정 및 interceptor
+│   │   │   ├── api_response.dart      # 공통 API 응답
+│   │   │   ├── network_exception.dart # 네트워크 예외
+│   │   │   └── error_handler.dart     # 에러 메시지 변환
+│   │   ├── storage/
+│   │   │   └── secure_storage.dart    # 토큰 저장소
+│   │   ├── providers/
+│   │   │   └── core_providers.dart    # 기본 Provider들
+│   │   └── utils/
+│   │       ├── logger.dart            # 로깅
+│   │       └── formatters.dart        # 숫자 포맷
+│   │
+│   ├── features/
+│   │   ├── auth/
+│   │   │   ├── data/
+│   │   │   │   ├── models/
+│   │   │   │   │   ├── login_request.dart
+│   │   │   │   │   ├── token_response.dart
+│   │   │   │   │   ├── user.dart
+│   │   │   │   │   └── register_request.dart
+│   │   │   │   └── repositories/
+│   │   │   │       └── auth_repository.dart
+│   │   │   └── presentation/
+│   │   │       ├── providers/
+│   │   │       │   └── auth_provider.dart
+│   │   │       ├── screens/
+│   │   │       │   ├── splash_screen.dart
+│   │   │       │   ├── login_screen.dart
+│   │   │       │   └── register_screen.dart
+│   │   │       └── widgets/
+│   │   │           ├── login_form.dart
+│   │   │           └── register_form.dart
+│   │   │
+│   │   ├── assets/
+│   │   │   ├── data/
+│   │   │   │   ├── models/
+│   │   │   │   │   ├── asset.dart
+│   │   │   │   │   └── asset_detail.dart
+│   │   │   │   └── repositories/
+│   │   │   │       └── asset_repository.dart
+│   │   │   └── presentation/
+│   │   │       ├── providers/
+│   │   │       │   └── asset_provider.dart
+│   │   │       ├── screens/
+│   │   │       │   ├── asset_list_screen.dart
+│   │   │       │   └── asset_detail_screen.dart
+│   │   │       └── widgets/
+│   │   │           ├── asset_card.dart
+│   │   │           └── asset_type_tabs.dart
+│   │   │
+│   │   └── search/
+│   │       ├── data/
+│   │       │   └── repositories/
+│   │       │       └── search_repository.dart
+│   │       └── presentation/
+│   │           ├── providers/
+│   │           │   └── search_provider.dart
+│   │           ├── screens/
+│   │           │   └── search_screen.dart
+│   │           └── widgets/
+│   │               └── search_result_item.dart
+│   │
+│   └── shared/
+│       ├── widgets/
+│       │   ├── custom_app_bar.dart
+│       │   ├── loading_indicator.dart
+│       │   ├── error_widget.dart
+│       │   └── empty_state.dart
+│       └── extensions/
+│           ├── context_extension.dart
+│           └── string_extension.dart
+│
+├── test/
+│   ├── backend_integration_test.dart  # 백엔드 연동 테스트
+│   ├── unit/
+│   │   ├── auth_repository_test.dart
+│   │   └── asset_repository_test.dart
+│   ├── widget/
+│   │   └── login_screen_test.dart
+│   └── integration/
+│       └── auth_flow_test.dart
+│
+├── assets/
+│   └── images/
+├── .env
+├── .env.example
+├── pubspec.yaml
+├── analysis_options.yaml
+├── android/
+│   └── app/
+│       └── proguard-rules.pro        # ProGuard 규칙
+├── ios/
+│   └── Runner/
+│       └── Info.plist                # Keychain 권한
+└── README.md
+
+================================================================================
+4. 상세 구현 계획
+================================================================================
+
+4.0 Phase 0: 사전 준비 및 환경 검증 (필수!)
+==========================================
+
+예상 시간: 30분
+
+작업 내용:
+----------
+
+1. Flutter 설치 확인
+   ```bash
+   flutter --version
+   # 출력 예시: Flutter 3.24.0 • Dart 3.5.0
+   # 3.24.0 이상이어야 함
+   ```
+
+2. 백엔드 서버 확인
+   ```bash
+   cd /Users/indent/Desktop/Noah/repo/asset-backend
+
+   # 백엔드 서버 시작 (이미 실행 중이면 생략)
+   uvicorn main:app --reload --port 8001
+
+   # 별도 터미널에서 Health Check
+   curl http://localhost:8001/health
+   # 예상 출력: {"status":"healthy"}
+   ```
+
+3. 백엔드 API 문서 확인
+   - 브라우저에서 http://localhost:8001/api/docs 열기
+   - OAuth 2.0 엔드포인트 확인:
+     - POST /api/v1/auth/token
+     - POST /api/v1/auth/register
+     - GET /api/v1/auth/userinfo
+     - POST /api/v1/auth/logout
+
+4. 테스트 계정 준비
+   - 기존 테스트 계정: testuser / testpass123
+   - 또는 새로운 계정 생성:
+   ```bash
+   curl -X POST "http://localhost:8001/api/v1/auth/register" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "username": "fluttertest",
+       "email": "flutter@test.com",
+       "password": "testpass123",
+       "phone_number": "010-0000-0000"
+     }'
+   ```
+
+5. 로그인 테스트
+   ```bash
+   curl -X POST "http://localhost:8001/api/v1/auth/token" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "grant_type": "password",
+       "username": "testuser",
+       "password": "testpass123",
+       "device_type": "android"
+     }'
+
+   # 출력 확인: access_token, refresh_token 포함된 JSON
+   ```
+
+6. 체크리스트
+   - [ ] Flutter 3.24+ 설치 확인
+   - [ ] 백엔드 서버 http://localhost:8001 에서 정상 응답
+   - [ ] API 문서 페이지 접근 가능
+   - [ ] 테스트 계정 로그인 성공
+   - [ ] OAuth 2.0 토큰 발급 확인
+
+⚠️ 위 체크리스트를 모두 통과해야 다음 Phase로 진행!
+
+
+4.1 Phase 1: 프로젝트 초기 설정
+===============================
+
+예상 시간: 2-3시간
+
+작업 내용:
+----------
+
+1.1. Flutter 프로젝트 생성
+   ```bash
+   cd /Users/indent/Desktop/Noah/repo/
+   flutter create asset_folio_mobile \
+     --org com.assetfolio \
+     --platforms=ios,android \
+     --project-name asset_folio_mobile
+
+   cd asset_folio_mobile
+   ```
+
+1.2. 의존성 추가 (pubspec.yaml)
+
+   pubspec.yaml 파일에 다음 내용 추가:
+
+   ```yaml
+   dependencies:
+     flutter:
+       sdk: flutter
+
+     # 상태 관리
+     riverpod: ^2.5.1
+     flutter_riverpod: ^2.5.1
+
+     # 네트워킹
+     dio: ^5.4.0
+     json_annotation: ^4.8.1
+
+     # 보안 저장소
+     flutter_secure_storage: ^9.0.0
+
+     # 라우팅
+     go_router: ^14.0.0
+
+     # 환경변수
+     flutter_dotenv: ^5.1.0
+
+     # 디바이스 정보
+     device_info_plus: ^10.0.0
+
+     # UI
+     google_fonts: ^6.1.0
+     flutter_svg: ^2.0.9
+     shimmer: ^3.0.0
+
+     # 유틸리티
+     intl: ^0.19.0
+     logger: ^2.0.2
+     connectivity_plus: ^6.0.0
+
+   dev_dependencies:
+     flutter_test:
+       sdk: flutter
+     flutter_lints: ^4.0.0
+     build_runner: ^2.4.7
+     json_serializable: ^6.7.1
+   ```
+
+   설치:
+   ```bash
+   flutter pub get
+   ```
+
+1.3. 환경변수 파일 생성
+
+   프로젝트 루트에 .env 파일 생성:
+
+   ⚠️ iOS Simulator는 localhost를 사용할 수 없습니다!
+   - Android Emulator: 10.0.2.2:8001 사용
+   - iOS Simulator: Mac의 실제 IP 주소 사용 (예: 192.168.1.10:8001)
+
+   Mac IP 확인:
+   ```bash
+   ifconfig | grep "inet " | grep -v 127.0.0.1
+   ```
+
+   .env 파일 생성 (IP는 본인의 Mac IP로 변경):
+   ```bash
+   cat > .env << 'EOF'
+   # Android Emulator용
+   # API_BASE_URL=http://10.0.2.2:8001/api/v1
+
+   # iOS Simulator용 (본인의 Mac IP로 변경!)
+   API_BASE_URL=http://192.168.1.10:8001/api/v1
+   EOF
+   ```
+
+   .env.example 파일도 생성:
+   ```bash
+   cat > .env.example << 'EOF'
+   # Android Emulator: http://10.0.2.2:8001/api/v1
+   # iOS Simulator: http://[YOUR_MAC_IP]:8001/api/v1
+   API_BASE_URL=http://localhost:8001/api/v1
+   EOF
+   ```
+
+   assets 섹션 추가 (pubspec.yaml):
+   ```yaml
+   flutter:
+     uses-material-design: true
+     assets:
+       - .env
+   ```
+
+1.4. .gitignore 설정
+   ```bash
+   # .gitignore에 .env 추가
+   echo "" >> .gitignore
+   echo "# Environment variables" >> .gitignore
+   echo ".env" >> .gitignore
+   ```
+
+1.5. 폴더 구조 생성
+   ```bash
+   # lib/ 폴더 구조 생성
+   mkdir -p lib/app
+   mkdir -p lib/core/{config,constants,network,storage,providers,utils}
+   mkdir -p lib/features/auth/{data/{models,repositories},presentation/{providers,screens,widgets}}
+   mkdir -p lib/features/assets/{data/{models,repositories},presentation/{providers,screens,widgets}}
+   mkdir -p lib/features/search/{data/repositories,presentation/{providers,screens,widgets}}
+   mkdir -p lib/shared/{widgets,extensions}
+   mkdir -p test/{unit,widget,integration}
+   mkdir -p assets/images
+   ```
+
+1.6. analysis_options.yaml 설정
+   ```yaml
+   include: package:flutter_lints/flutter.yaml
+
+   linter:
+     rules:
+       prefer_const_constructors: true
+       prefer_const_literals_to_create_immutables: true
+       avoid_print: true
+       prefer_single_quotes: true
+   ```
+
+1.7. Android ProGuard 설정
+
+   android/app/proguard-rules.pro 파일 생성:
+   ```proguard
+   # Flutter Wrapper
+   -keep class io.flutter.app.** { *; }
+   -keep class io.flutter.plugin.** { *; }
+   -keep class io.flutter.util.** { *; }
+   -keep class io.flutter.view.** { *; }
+   -keep class io.flutter.** { *; }
+   -keep class io.flutter.plugins.** { *; }
+
+   # JSON Serializable - json_annotation 사용
+   -keepattributes *Annotation*
+   -keepattributes Signature
+   -keepattributes *Annotation*,Signature,Exception
+
+   # Keep generated files by json_serializable
+   -keep class **$*.g.dart { *; }
+   -keep class * {
+     @com.google.gson.annotations.SerializedName <fields>;
+   }
+
+   # Keep data models
+   -keep class **.data.models.** { *; }
+
+   # Keep JsonSerializable classes
+   -keepclassmembers class * {
+     @com.google.gson.annotations.SerializedName <fields>;
+     @com.google.gson.annotations.Expose <fields>;
+   }
+   ```
+
+   android/app/build.gradle 수정:
+   ```gradle
+   buildTypes {
+       release {
+           signingConfig signingConfigs.debug
+           minifyEnabled true
+           proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+       }
+   }
+   ```
+
+1.8. iOS 설정 (Keychain 및 HTTP 허용)
+
+   ios/Runner/Info.plist에 추가:
+   ```xml
+   <key>KeychainAccessGroups</key>
+   <array>
+     <string>$(AppIdentifierPrefix)com.assetfolio.assetFolioMobile</string>
+   </array>
+
+   <!-- ⚠️ CRITICAL: Allow HTTP for local development -->
+   <key>NSAppTransportSecurity</key>
+   <dict>
+       <key>NSAllowsLocalNetworking</key>
+       <true/>
+       <key>NSAllowsArbitraryLoads</key>
+       <true/>
+   </dict>
+   ```
+
+   ⚠️ IMPORTANT: Remove `NSAllowsArbitraryLoads` before App Store submission!
+   For production, use HTTPS only or configure specific domain exceptions.
+
+   Minimum iOS Version (ios/Podfile을 열어서 수정):
+   ```ruby
+   # Uncomment and set to iOS 12.0 (flutter_secure_storage requirement)
+   platform :ios, '12.0'
+   ```
+
+1.9. 검증
+   ```bash
+   # 린트 검사
+   flutter analyze
+
+   # 의존성 확인
+   flutter pub get
+
+   # Flutter Doctor
+   flutter doctor
+
+   # 빌드 테스트
+   flutter build apk --debug
+   ```
+
+체크리스트:
+- [ ] 프로젝트 생성 완료
+- [ ] 모든 패키지 설치 완료
+- [ ] .env 파일 생성 및 API URL 설정 (iOS는 Mac IP 사용!)
+- [ ] .gitignore에 .env 추가 완료
+- [ ] 폴더 구조 생성 완료
+- [ ] ProGuard 설정 완료 (json_serializable 규칙 포함)
+- [ ] iOS Keychain 설정 완료
+- [ ] flutter analyze 통과
+- [ ] flutter build 성공
+
+
+4.2 Phase 2: Core 레이어 및 테마 구현
+======================================
+
+예상 시간: 4-5시간
+
+작업 내용:
+----------
+
+⚠️ 중요: Theme을 Phase 2에서 구현하는 이유
+LoginScreen과 다른 UI 컴포넌트가 Theme에 의존하므로, Phase 4 이전에 완성해야 합니다.
+
+2.1. 환경변수 설정 (lib/core/config/env_config.dart)
+   ```dart
+   import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+   class EnvConfig {
+     static String get apiBaseUrl => dotenv.env['API_BASE_URL'] ?? 'http://localhost:8001/api/v1';
+   }
+   ```
+
+2.2. API 상수 (lib/core/constants/api_constants.dart)
+   ```dart
+   import '../config/env_config.dart';
+
+   class ApiConstants {
+     static String get baseUrl => EnvConfig.apiBaseUrl;
+
+     // Auth endpoints
+     static const String authToken = '/auth/token';
+     static const String authRegister = '/auth/register';
+     static const String authUserInfo = '/auth/userinfo';
+     static const String authLogout = '/auth/logout';
+     static const String authRevoke = '/auth/revoke';
+
+     // Asset endpoints
+     static const String stocksKr = '/stocks/kr';
+     static const String stocksUs = '/stocks/us';
+     static const String crypto = '/crypto';
+   }
+   ```
+
+2.3. 보안 저장소 (lib/core/storage/secure_storage.dart)
+   ```dart
+   import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+   class SecureStorage {
+     final FlutterSecureStorage _storage = const FlutterSecureStorage(
+       aOptions: AndroidOptions(encryptedSharedPreferences: true),
+     );
+
+     static const _accessTokenKey = 'access_token';
+     static const _refreshTokenKey = 'refresh_token';
+     static const _tokenExpiryKey = 'token_expiry';
+
+     Future<void> saveTokens({
+       required String accessToken,
+       required String refreshToken,
+       required int expiresIn,
+     }) async {
+       await _storage.write(key: _accessTokenKey, value: accessToken);
+       await _storage.write(key: _refreshTokenKey, value: refreshToken);
+
+       final expiryTime = DateTime.now().add(Duration(seconds: expiresIn - 60));
+       await _storage.write(key: _tokenExpiryKey, value: expiryTime.toIso8601String());
+     }
+
+     Future<String?> getAccessToken() async {
+       return await _storage.read(key: _accessTokenKey);
+     }
+
+     Future<String?> getRefreshToken() async {
+       return await _storage.read(key: _refreshTokenKey);
+     }
+
+     Future<bool> hasTokens() async {
+       final accessToken = await getAccessToken();
+       final refreshToken = await getRefreshToken();
+       return accessToken != null && refreshToken != null;
+     }
+
+     Future<void> clearTokens() async {
+       await _storage.delete(key: _accessTokenKey);
+       await _storage.delete(key: _refreshTokenKey);
+       await _storage.delete(key: _tokenExpiryKey);
+     }
+   }
+   ```
+
+2.4. 에러 핸들러 (lib/core/network/error_handler.dart)
+   ```dart
+   import 'package:dio/dio.dart';
+
+   class ErrorHandler {
+     static String getUserFriendlyError(DioException e) {
+       switch (e.type) {
+         case DioExceptionType.connectionTimeout:
+         case DioExceptionType.sendTimeout:
+         case DioExceptionType.receiveTimeout:
+           return '연결 시간이 초과되었습니다';
+         case DioExceptionType.badResponse:
+           return _handleStatusCode(e.response?.statusCode);
+         case DioExceptionType.cancel:
+           return '요청이 취소되었습니다';
+         case DioExceptionType.connectionError:
+           return '네트워크 연결을 확인해주세요';
+         default:
+           return '알 수 없는 오류가 발생했습니다';
+       }
+     }
+
+     static String _handleStatusCode(int? statusCode) {
+       switch (statusCode) {
+         case 400:
+           return '잘못된 요청입니다';
+         case 401:
+           return '인증에 실패했습니다';
+         case 403:
+           return '접근 권한이 없습니다';
+         case 404:
+           return '요청한 정보를 찾을 수 없습니다';
+         case 500:
+           return '서버 오류가 발생했습니다';
+         default:
+           return '오류가 발생했습니다 (코드: $statusCode)';
+       }
+     }
+   }
+   ```
+
+2.5. Dio 클라이언트 (lib/core/network/dio_client.dart)
+
+   ⚠️ 중요: Token Refresh에 Mutex 패턴 적용
+
+   ```dart
+   import 'dart:io';
+   import 'dart:async';  // Required for Completer
+   import 'package:dio/dio.dart';
+   import 'package:flutter/foundation.dart';
+   import '../constants/api_constants.dart';
+   import '../storage/secure_storage.dart';
+
+   class DioClient {
+     final Dio _dio;
+     final SecureStorage _storage;
+     bool _isRefreshing = false;
+     final List<Function(String)> _refreshCallbacks = [];
+
+     DioClient(this._storage) : _dio = Dio() {
+       _dio.options.baseURL = ApiConstants.baseUrl;
+       _dio.options.connectTimeout = const Duration(seconds: 30);
+       _dio.options.receiveTimeout = const Duration(seconds: 30);
+
+       // Request Interceptor
+       _dio.interceptors.add(InterceptorsWrapper(
+         onRequest: (options, handler) async {
+           final token = await _storage.getAccessToken();
+           if (token != null && !options.path.contains('/auth/token')) {
+             options.headers['Authorization'] = 'Bearer $token';
+           }
+           return handler.next(options);
+         },
+         onError: (error, handler) async {
+           // 401 에러 처리 - Token Refresh (Mutex 패턴)
+           if (error.response?.statusCode == 401 &&
+               !error.requestOptions.path.contains('/auth/token') &&
+               !error.requestOptions.path.contains('/auth/userinfo')) {
+
+             // 이미 refresh 중이면 대기
+             if (_isRefreshing) {
+               return _waitForRefresh(error.requestOptions, handler);
+             }
+
+             // Refresh 시작
+             _isRefreshing = true;
+
+             try {
+               final refreshToken = await _storage.getRefreshToken();
+               if (refreshToken == null) {
+                 await _storage.clearTokens();
+                 return handler.reject(error);
+               }
+
+               // Refresh Token으로 새 Access Token 발급
+               final response = await _dio.post(
+                 ApiConstants.authToken,
+                 data: {
+                   'grant_type': 'refresh_token',
+                   'refresh_token': refreshToken,
+                 },
+               );
+
+               final newAccessToken = response.data['access_token'] as String;
+               final newRefreshToken = response.data['refresh_token'] as String;
+               final expiresIn = response.data['expires_in'] as int;
+
+               await _storage.saveTokens(
+                 accessToken: newAccessToken,
+                 refreshToken: newRefreshToken,
+                 expiresIn: expiresIn,
+               );
+
+               // 대기 중인 요청들에게 알림
+               for (final callback in _refreshCallbacks) {
+                 callback(newAccessToken);
+               }
+               _refreshCallbacks.clear();
+
+               // 원래 요청 재시도
+               error.requestOptions.headers['Authorization'] = 'Bearer $newAccessToken';
+               return handler.resolve(await _dio.fetch(error.requestOptions));
+
+             } catch (e) {
+               await _storage.clearTokens();
+
+               // ⚠️ CRITICAL FIX: 대기 중인 요청들에게 실패 알림
+               for (final callback in _refreshCallbacks) {
+                 // 빈 토큰으로 콜백 호출 (실패 표시)
+                 try {
+                   callback('');
+                 } catch (_) {}
+               }
+               _refreshCallbacks.clear();
+
+               return handler.reject(error);
+             } finally {
+               _isRefreshing = false;
+             }
+           }
+
+           return handler.next(error);
+         },
+       ));
+
+       // Logging Interceptor (개발 환경만)
+       if (kDebugMode) {
+         _dio.interceptors.add(LogInterceptor(
+           requestBody: true,
+           responseBody: true,
+           logPrint: (obj) => debugPrint(obj.toString()),
+         ));
+       }
+     }
+
+     Future<Response> _waitForRefresh(
+       RequestOptions options,
+       ErrorInterceptorHandler handler,
+     ) async {
+       final completer = Completer<String>();
+       _refreshCallbacks.add((token) => completer.complete(token));
+
+       final newToken = await completer.future;
+
+       // 토큰이 빈 문자열이면 실패한 것
+       if (newToken.isEmpty) {
+         throw DioException(
+           requestOptions: options,
+           response: Response(
+             requestOptions: options,
+             statusCode: 401,
+             statusMessage: 'Token refresh failed',
+           ),
+         );
+       }
+
+       options.headers['Authorization'] = 'Bearer $newToken';
+       return _dio.fetch(options);
+     }
+
+     Dio get dio => _dio;
+   }
+   ```
+
+2.6. Core Providers (lib/core/providers/core_providers.dart)
+   ```dart
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'package:dio/dio.dart';
+   import '../storage/secure_storage.dart';
+   import '../network/dio_client.dart';
+
+   final secureStorageProvider = Provider<SecureStorage>((ref) {
+     return SecureStorage();
+   });
+
+   final dioClientProvider = Provider<DioClient>((ref) {
+     final storage = ref.watch(secureStorageProvider);
+     return DioClient(storage);
+   });
+
+   final dioProvider = Provider<Dio>((ref) {
+     return ref.watch(dioClientProvider).dio;
+   });
+   ```
+
+2.7. Logger (lib/core/utils/logger.dart)
+   ```dart
+   import 'package:logger/logger.dart';
+
+   final logger = Logger(
+     printer: PrettyPrinter(
+       methodCount: 0,
+       errorMethodCount: 5,
+       lineLength: 120,
+       colors: true,
+       printEmojis: true,
+     ),
+   );
+   ```
+
+2.8. 테마 설정 (lib/app/theme.dart)
+
+   ⚠️ Phase 4의 LoginScreen이 Theme에 의존하므로 먼저 구현합니다.
+
+   ```dart
+   import 'package:flutter/material.dart';
+
+   class AppTheme {
+     static ThemeData lightTheme = ThemeData(
+       useMaterial3: true,
+       colorScheme: ColorScheme.fromSeed(
+         seedColor: Colors.blue,
+         brightness: Brightness.light,
+       ),
+       appBarTheme: const AppBarTheme(
+         centerTitle: true,
+         elevation: 0,
+       ),
+       cardTheme: CardTheme(
+         elevation: 2,
+         shape: RoundedRectangleBorder(
+           borderRadius: BorderRadius.circular(12),
+         ),
+       ),
+       inputDecorationTheme: InputDecorationTheme(
+         border: OutlineInputBorder(
+           borderRadius: BorderRadius.circular(8),
+         ),
+         filled: true,
+       ),
+       elevatedButtonTheme: ElevatedButtonThemeData(
+         style: ElevatedButton.styleFrom(
+           minimumSize: const Size.fromHeight(48),
+           shape: RoundedRectangleBorder(
+             borderRadius: BorderRadius.circular(8),
+           ),
+         ),
+       ),
+     );
+
+     static ThemeData darkTheme = ThemeData(
+       useMaterial3: true,
+       colorScheme: ColorScheme.fromSeed(
+         seedColor: Colors.blue,
+         brightness: Brightness.dark,
+       ),
+       appBarTheme: const AppBarTheme(
+         centerTitle: true,
+         elevation: 0,
+       ),
+       cardTheme: CardTheme(
+         elevation: 2,
+         shape: RoundedRectangleBorder(
+           borderRadius: BorderRadius.circular(12),
+         ),
+       ),
+       inputDecorationTheme: InputDecorationTheme(
+         border: OutlineInputBorder(
+           borderRadius: BorderRadius.circular(8),
+         ),
+         filled: true,
+       ),
+       elevatedButtonTheme: ElevatedButtonThemeData(
+         style: ElevatedButton.styleFrom(
+           minimumSize: const Size.fromHeight(48),
+           shape: RoundedRectangleBorder(
+             borderRadius: BorderRadius.circular(8),
+           ),
+         ),
+       ),
+     );
+   }
+   ```
+
+체크리스트:
+- [ ] 환경변수 설정 완료
+- [ ] SecureStorage 구현 완료
+- [ ] DioClient with Mutex 패턴 구현 완료 (실패 시 콜백 알림 포함)
+- [ ] Core Providers 정의 완료
+- [ ] Theme 설정 완료
+- [ ] 코드 제너레이션 (없음, 이 단계에서는 필요없음)
+
+
+4.3 Phase 3: 백엔드 연동 테스트 (중요!)
+=======================================
+
+예상 시간: 1시간
+
+작업 내용:
+----------
+
+3.1. 백엔드 통합 테스트 파일 생성 (test/backend_integration_test.dart)
+   ```dart
+   import 'package:flutter_test/flutter_test.dart';
+   import 'package:dio/dio.dart';
+   import 'package:asset_folio_mobile/core/constants/api_constants.dart';
+
+   void main() {
+     late Dio dio;
+
+     setUp(() {
+       dio = Dio(BaseOptions(
+         baseURL: ApiConstants.baseUrl,
+         connectTimeout: const Duration(seconds: 10),
+       ));
+     });
+
+     group('Backend Integration Tests', () {
+       test('POST /auth/token - Login with valid credentials', () async {
+         final response = await dio.post(
+           ApiConstants.authToken,
+           data: {
+             'grant_type': 'password',
+             'username': 'testuser',
+             'password': 'testpass123',
+             'device_type': 'android',
+           },
+         );
+
+         expect(response.statusCode, 200);
+         expect(response.data['access_token'], isNotNull);
+         expect(response.data['refresh_token'], isNotNull);
+         expect(response.data['token_type'], 'Bearer');
+       });
+
+       test('GET /auth/userinfo - Get user info with token', () async {
+         // 먼저 로그인
+         final loginResponse = await dio.post(
+           ApiConstants.authToken,
+           data: {
+             'grant_type': 'password',
+             'username': 'testuser',
+             'password': 'testpass123',
+             'device_type': 'android',
+           },
+         );
+
+         final token = loginResponse.data['access_token'];
+
+         // UserInfo 요청
+         final userInfoResponse = await dio.get(
+           ApiConstants.authUserInfo,
+           options: Options(headers: {'Authorization': 'Bearer $token'}),
+         );
+
+         expect(userInfoResponse.statusCode, 200);
+         expect(userInfoResponse.data['username'], 'testuser');
+         expect(userInfoResponse.data['sub'], isNotNull);
+       });
+
+       test('GET /stocks/kr - Get Korean stocks list', () async {
+         // 로그인
+         final loginResponse = await dio.post(
+           ApiConstants.authToken,
+           data: {
+             'grant_type': 'password',
+             'username': 'testuser',
+             'password': 'testpass123',
+             'device_type': 'android',
+           },
+         );
+
+         final token = loginResponse.data['access_token'];
+
+         // 한국 주식 목록 요청
+         final stocksKrResponse = await dio.get(
+           ApiConstants.stocksKr,
+           options: Options(headers: {'Authorization': 'Bearer $token'}),
+         );
+
+         expect(stocksKrResponse.statusCode, 200);
+         expect(stocksKrResponse.data['results'], isList);
+       });
+
+       test('GET /stocks/us - Get US stocks list', () async {
+         // 로그인
+         final loginResponse = await dio.post(
+           ApiConstants.authToken,
+           data: {
+             'grant_type': 'password',
+             'username': 'testuser',
+             'password': 'testpass123',
+             'device_type': 'android',
+           },
+         );
+
+         final token = loginResponse.data['access_token'];
+
+         // 미국 주식 목록 요청
+         final stocksUsResponse = await dio.get(
+           ApiConstants.stocksUs,
+           options: Options(headers: {'Authorization': 'Bearer $token'}),
+         );
+
+         expect(stocksUsResponse.statusCode, 200);
+         expect(stocksUsResponse.data['results'], isList);
+       });
+
+       test('GET /crypto - Get crypto list', () async {
+         // 로그인
+         final loginResponse = await dio.post(
+           ApiConstants.authToken,
+           data: {
+             'grant_type': 'password',
+             'username': 'testuser',
+             'password': 'testpass123',
+             'device_type': 'android',
+           },
+         );
+
+         final token = loginResponse.data['access_token'];
+
+         // 암호화폐 목록 요청
+         final cryptoResponse = await dio.get(
+           ApiConstants.crypto,
+           options: Options(headers: {'Authorization': 'Bearer $token'}),
+         );
+
+         expect(cryptoResponse.statusCode, 200);
+         expect(cryptoResponse.data['results'], isList);
+       });
+     });
+   }
+   ```
+
+3.2. 테스트 실행
+   ```bash
+   # 백엔드 서버가 실행 중인지 확인
+   curl http://localhost:8001/health
+
+   # 테스트 실행
+   flutter test test/backend_integration_test.dart
+   ```
+
+체크리스트:
+- [ ] 백엔드 서버 실행 중
+- [ ] 로그인 테스트 통과
+- [ ] UserInfo 테스트 통과
+- [ ] 한국 주식 목록 테스트 통과
+- [ ] 미국 주식 목록 테스트 통과
+- [ ] 암호화폐 목록 테스트 통과
+
+⚠️ 이 테스트가 모두 통과해야 다음 Phase로 진행!
+
+
+4.4 Phase 4: 인증 기능 구현
+===========================
+
+예상 시간: 5-6시간
+
+작업 내용:
+----------
+
+4.4.1 데이터 모델 생성
+
+TokenResponse (lib/features/auth/data/models/token_response.dart):
+   ```dart
+   import 'package:json_annotation/json_annotation.dart';
+
+   part 'token_response.g.dart';
+
+   @JsonSerializable()
+   class TokenResponse {
+     @JsonKey(name: 'access_token')
+     final String accessToken;
+
+     @JsonKey(name: 'refresh_token')
+     final String refreshToken;
+
+     @JsonKey(name: 'token_type')
+     final String tokenType;
+
+     @JsonKey(name: 'expires_in')
+     final int expiresIn;
+
+     @JsonKey(name: 'refresh_expires_in')
+     final int refreshExpiresIn;
+
+     TokenResponse({
+       required this.accessToken,
+       required this.refreshToken,
+       required this.tokenType,
+       required this.expiresIn,
+       required this.refreshExpiresIn,
+     });
+
+     factory TokenResponse.fromJson(Map<String, dynamic> json) =>
+         _$TokenResponseFromJson(json);
+     Map<String, dynamic> toJson() => _$TokenResponseToJson(this);
+   }
+   ```
+
+LoginRequest (lib/features/auth/data/models/login_request.dart):
+   ```dart
+   import 'package:json_annotation/json_annotation.dart';
+
+   part 'login_request.g.dart';
+
+   @JsonSerializable()
+   class LoginRequest {
+     @JsonKey(name: 'grant_type')
+     final String grantType;
+
+     final String username;
+     final String password;
+
+     @JsonKey(name: 'device_type')
+     final String deviceType;
+
+     @JsonKey(name: 'device_id')
+     final String? deviceId;
+
+     LoginRequest({
+       this.grantType = 'password',
+       required this.username,
+       required this.password,
+       required this.deviceType,
+       this.deviceId,
+     });
+
+     Map<String, dynamic> toJson() => _$LoginRequestToJson(this);
+   }
+   ```
+
+User (lib/features/auth/data/models/user.dart):
+   ```dart
+   import 'package:json_annotation/json_annotation.dart';
+
+   part 'user.g.dart';
+
+   @JsonSerializable()
+   class User {
+     final int id;
+     final String username;
+     final String email;
+
+     @JsonKey(name: 'phone_number')
+     final String? phoneNumber;
+
+     @JsonKey(name: 'receive_daily_report')
+     final bool receiveDailyReport;
+
+     User({
+       required this.id,
+       required this.username,
+       required this.email,
+       this.phoneNumber,
+       this.receiveDailyReport = false,
+     });
+
+     factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
+     Map<String, dynamic> toJson() => _$UserToJson(this);
+   }
+   ```
+
+RegisterRequest (lib/features/auth/data/models/register_request.dart):
+   ```dart
+   import 'package:json_annotation/json_annotation.dart';
+
+   part 'register_request.g.dart';
+
+   @JsonSerializable()
+   class RegisterRequest {
+     final String username;
+     final String email;
+     final String password;
+
+     @JsonKey(name: 'phone_number')
+     final String? phoneNumber;
+
+     @JsonKey(name: 'receive_daily_report')
+     final bool receiveDailyReport;
+
+     RegisterRequest({
+       required this.username,
+       required this.email,
+       required this.password,
+       this.phoneNumber,
+       this.receiveDailyReport = false,
+     });
+
+     Map<String, dynamic> toJson() => _$RegisterRequestToJson(this);
+   }
+   ```
+
+코드 제너레이션 실행:
+
+   ⚠️ CRITICAL: 다음 4개 파일을 모두 생성한 후에 실행하세요!
+   - token_response.dart
+   - login_request.dart
+   - user.dart
+   - register_request.dart
+
+   ```bash
+   flutter pub run build_runner build --delete-conflicting-outputs
+   ```
+
+   Expected output: 4개의 .g.dart 파일 생성됨
+   - token_response.g.dart
+   - login_request.g.dart
+   - user.g.dart
+   - register_request.g.dart
+
+   ⚠️ 만약 "part 'xxx.g.dart' not found" 에러가 발생하면:
+   ```bash
+   flutter pub run build_runner clean
+   flutter pub run build_runner build --delete-conflicting-outputs
+   ```
+
+4.4.2 Repository 구현
+
+AuthRepository (lib/features/auth/data/repositories/auth_repository.dart):
+   ```dart
+   import 'dart:io';
+   import 'package:dio/dio.dart';
+   import 'package:device_info_plus/device_info_plus.dart';
+   import '../../../../core/constants/api_constants.dart';
+   import '../../../../core/storage/secure_storage.dart';
+   import '../models/login_request.dart';
+   import '../models/token_response.dart';
+   import '../models/user.dart';
+   import '../models/register_request.dart';
+
+   class AuthRepository {
+     final Dio _dio;
+     final SecureStorage _storage;
+
+     AuthRepository(this._dio, this._storage);
+
+     Future<TokenResponse> login(String username, String password) async {
+       final deviceId = await _getDeviceId();
+
+       final request = LoginRequest(
+         username: username,
+         password: password,
+         deviceType: Platform.isIOS ? 'ios' : 'android',
+         deviceId: deviceId,
+       );
+
+       final response = await _dio.post(
+         ApiConstants.authToken,
+         data: request.toJson(),
+       );
+
+       final tokenResponse = TokenResponse.fromJson(response.data);
+
+       await _storage.saveTokens(
+         accessToken: tokenResponse.accessToken,
+         refreshToken: tokenResponse.refreshToken,
+         expiresIn: tokenResponse.expiresIn,
+       );
+
+       return tokenResponse;
+     }
+
+     Future<User> getUserInfo() async {
+       final response = await _dio.get(ApiConstants.authUserInfo);
+       return User.fromJson(response.data);
+     }
+
+     Future<void> logout() async {
+       try {
+         await _dio.post(ApiConstants.authLogout);
+       } finally {
+         await _storage.clearTokens();
+       }
+     }
+
+     Future<User> register(RegisterRequest request) async {
+       final response = await _dio.post(
+         ApiConstants.authRegister,
+         data: request.toJson(),
+       );
+       return User.fromJson(response.data);
+     }
+
+     Future<String> _getDeviceId() async {
+       final deviceInfo = DeviceInfoPlugin();
+       try {
+         if (Platform.isAndroid) {
+           final androidInfo = await deviceInfo.androidInfo;
+           return androidInfo.id;
+         } else if (Platform.isIOS) {
+           final iosInfo = await deviceInfo.iosInfo;
+           return iosInfo.identifierForVendor ?? 'unknown-ios';
+         } else {
+           // Web, Desktop, or other platforms
+           return 'unknown-platform-${DateTime.now().millisecondsSinceEpoch}';
+         }
+       } catch (e) {
+         return 'device-${DateTime.now().millisecondsSinceEpoch}';
+       }
+     }
+   }
+   ```
+
+4.4.3 Provider 구현
+
+AuthProvider (lib/features/auth/presentation/providers/auth_provider.dart):
+   ```dart
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import '../../../../core/providers/core_providers.dart';
+   import '../../data/repositories/auth_repository.dart';
+   import '../../data/models/user.dart';
+   import '../../data/models/register_request.dart';
+
+   // Auth State
+   class AuthState {
+     final User? user;
+     final bool isAuthenticated;
+     final bool isLoading;
+     final String? error;
+
+     AuthState({
+       this.user,
+       this.isAuthenticated = false,
+       this.isLoading = false,
+       this.error,
+     });
+
+     AuthState copyWith({
+       User? user,
+       bool? isAuthenticated,
+       bool? isLoading,
+       String? error,
+     }) {
+       return AuthState(
+         user: user ?? this.user,
+         isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+         isLoading: isLoading ?? this.isLoading,
+         error: error,
+       );
+     }
+   }
+
+   // Auth Notifier
+   class AuthNotifier extends StateNotifier<AuthState> {
+     final AuthRepository _repository;
+
+     AuthNotifier(this._repository) : super(AuthState());
+
+     Future<void> login(String username, String password) async {
+       state = state.copyWith(isLoading: true, error: null);
+
+       try {
+         await _repository.login(username, password);
+         final user = await _repository.getUserInfo();
+
+         state = state.copyWith(
+           user: user,
+           isAuthenticated: true,
+           isLoading: false,
+         );
+       } catch (e) {
+         state = state.copyWith(
+           isLoading: false,
+           error: e.toString(),
+         );
+         rethrow;
+       }
+     }
+
+     Future<void> logout() async {
+       await _repository.logout();
+       state = AuthState();
+     }
+
+     Future<void> loadUser() async {
+       state = state.copyWith(isLoading: true);
+
+       try {
+         final user = await _repository.getUserInfo();
+         state = state.copyWith(
+           user: user,
+           isAuthenticated: true,
+           isLoading: false,
+         );
+       } catch (e) {
+         await _repository.logout();
+         state = state.copyWith(isLoading: false);
+       }
+     }
+
+     Future<User> register(RegisterRequest request) async {
+       state = state.copyWith(isLoading: true, error: null);
+
+       try {
+         final user = await _repository.register(request);
+         state = state.copyWith(isLoading: false);
+         return user;
+       } catch (e) {
+         state = state.copyWith(
+           isLoading: false,
+           error: e.toString(),
+         );
+         rethrow;
+       }
+     }
+   }
+
+   // Repository Provider
+   final authRepositoryProvider = Provider<AuthRepository>((ref) {
+     final dio = ref.watch(dioProvider);
+     final storage = ref.watch(secureStorageProvider);
+     return AuthRepository(dio, storage);
+   });
+
+   // Auth Provider
+   final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
+     final repository = ref.watch(authRepositoryProvider);
+     return AuthNotifier(repository);
+   });
+   ```
+
+4.4.4 UI 화면 구현
+
+SplashScreen (lib/features/auth/presentation/screens/splash_screen.dart):
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'package:go_router/go_router.dart';
+   import '../../../../core/storage/secure_storage.dart';
+   import '../../../../core/providers/core_providers.dart';
+   import '../providers/auth_provider.dart';
+
+   class SplashScreen extends ConsumerStatefulWidget {
+     const SplashScreen({Key? key}) : super(key: key);
+
+     @override
+     ConsumerState<SplashScreen> createState() => _SplashScreenState();
+   }
+
+   class _SplashScreenState extends ConsumerState<SplashScreen> {
+     @override
+     void initState() {
+       super.initState();
+       _checkAuth();
+     }
+
+     Future<void> _checkAuth() async {
+       final storage = ref.read(secureStorageProvider);
+       final hasTokens = await storage.hasTokens();
+
+       if (hasTokens) {
+         await ref.read(authProvider.notifier).loadUser();
+         if (mounted) {
+           final isAuthenticated = ref.read(authProvider).isAuthenticated;
+           context.go(isAuthenticated ? '/assets' : '/login');
+         }
+       } else {
+         if (mounted) {
+           context.go('/login');
+         }
+       }
+     }
+
+     @override
+     Widget build(BuildContext context) {
+       return const Scaffold(
+         body: Center(
+           child: CircularProgressIndicator(),
+         ),
+       );
+     }
+   }
+   ```
+
+LoginScreen (lib/features/auth/presentation/screens/login_screen.dart):
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'package:go_router/go_router.dart';
+   import '../../../../core/network/error_handler.dart';
+   import 'package:dio/dio.dart';
+   import '../providers/auth_provider.dart';
+
+   class LoginScreen extends ConsumerStatefulWidget {
+     const LoginScreen({Key? key}) : super(key: key);
+
+     @override
+     ConsumerState<LoginScreen> createState() => _LoginScreenState();
+   }
+
+   class _LoginScreenState extends ConsumerState<LoginScreen> {
+     final _formKey = GlobalKey<FormState>();
+     final _usernameController = TextEditingController();
+     final _passwordController = TextEditingController();
+     bool _obscurePassword = true;
+
+     @override
+     Widget build(BuildContext context) {
+       final authState = ref.watch(authProvider);
+
+       ref.listen<AuthState>(authProvider, (previous, next) {
+         if (next.isAuthenticated) {
+           context.go('/assets');
+         } else if (next.error != null) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(content: Text(next.error!)),
+           );
+         }
+       });
+
+       return Scaffold(
+         body: SafeArea(
+           child: Padding(
+             padding: const EdgeInsets.all(24.0),
+             child: Form(
+               key: _formKey,
+               child: Column(
+                 mainAxisAlignment: MainAxisAlignment.center,
+                 crossAxisAlignment: CrossAxisAlignment.stretch,
+                 children: [
+                   Text(
+                     'Asset Folio',
+                     style: Theme.of(context).textTheme.displayMedium,
+                     textAlign: TextAlign.center,
+                   ),
+                   const SizedBox(height: 48),
+
+                   // Username Field
+                   TextFormField(
+                     controller: _usernameController,
+                     decoration: const InputDecoration(
+                       labelText: '사용자명',
+                       prefixIcon: Icon(Icons.person),
+                     ),
+                     validator: (value) {
+                       if (value == null || value.isEmpty) {
+                         return '사용자명을 입력하세요';
+                       }
+                       return null;
+                     },
+                   ),
+                   const SizedBox(height: 16),
+
+                   // Password Field
+                   TextFormField(
+                     controller: _passwordController,
+                     obscureText: _obscurePassword,
+                     decoration: InputDecoration(
+                       labelText: '비밀번호',
+                       prefixIcon: const Icon(Icons.lock),
+                       suffixIcon: IconButton(
+                         icon: Icon(
+                           _obscurePassword
+                               ? Icons.visibility
+                               : Icons.visibility_off,
+                         ),
+                         onPressed: () {
+                           setState(() {
+                             _obscurePassword = !_obscurePassword;
+                           });
+                         },
+                       ),
+                     ),
+                     validator: (value) {
+                       if (value == null || value.isEmpty) {
+                         return '비밀번호를 입력하세요';
+                       }
+                       return null;
+                     },
+                   ),
+                   const SizedBox(height: 24),
+
+                   // Login Button
+                   ElevatedButton(
+                     onPressed: authState.isLoading ? null : _handleLogin,
+                     child: authState.isLoading
+                         ? const SizedBox(
+                             height: 20,
+                             width: 20,
+                             child: CircularProgressIndicator(strokeWidth: 2),
+                           )
+                         : const Text('로그인'),
+                   ),
+                   const SizedBox(height: 16),
+
+                   // Register Link
+                   TextButton(
+                     onPressed: () => context.push('/register'),
+                     child: const Text('회원가입'),
+                   ),
+                 ],
+               ),
+             ),
+           ),
+         ),
+       );
+     }
+
+     Future<void> _handleLogin() async {
+       if (_formKey.currentState!.validate()) {
+         try {
+           await ref.read(authProvider.notifier).login(
+                 _usernameController.text,
+                 _passwordController.text,
+               );
+         } on DioException catch (e) {
+           final errorMessage = ErrorHandler.getUserFriendlyError(e);
+           if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(content: Text(errorMessage)),
+             );
+           }
+         }
+       }
+     }
+
+     @override
+     void dispose() {
+       _usernameController.dispose();
+       _passwordController.dispose();
+       super.dispose();
+     }
+   }
+   ```
+
+RegisterScreen (lib/features/auth/presentation/screens/register_screen.dart):
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'package:go_router/go_router.dart';
+   import '../../../../core/network/error_handler.dart';
+   import 'package:dio/dio.dart';
+   import '../providers/auth_provider.dart';
+   import '../../data/models/register_request.dart';
+
+   class RegisterScreen extends ConsumerStatefulWidget {
+     const RegisterScreen({Key? key}) : super(key: key);
+
+     @override
+     ConsumerState<RegisterScreen> createState() => _RegisterScreenState();
+   }
+
+   class _RegisterScreenState extends ConsumerState<RegisterScreen> {
+     final _formKey = GlobalKey<FormState>();
+     final _usernameController = TextEditingController();
+     final _emailController = TextEditingController();
+     final _passwordController = TextEditingController();
+     final _passwordConfirmController = TextEditingController();
+     final _phoneController = TextEditingController();
+     bool _obscurePassword = true;
+     bool _obscurePasswordConfirm = true;
+
+     @override
+     Widget build(BuildContext context) {
+       final authState = ref.watch(authProvider);
+
+       return Scaffold(
+         appBar: AppBar(
+           title: const Text('회원가입'),
+         ),
+         body: SafeArea(
+           child: SingleChildScrollView(
+             padding: const EdgeInsets.all(24.0),
+             child: Form(
+               key: _formKey,
+               child: Column(
+                 crossAxisAlignment: CrossAxisAlignment.stretch,
+                 children: [
+                   const SizedBox(height: 24),
+
+                   // Username Field
+                   TextFormField(
+                     controller: _usernameController,
+                     decoration: const InputDecoration(
+                       labelText: '사용자명',
+                       prefixIcon: Icon(Icons.person),
+                     ),
+                     validator: (value) {
+                       if (value == null || value.isEmpty) {
+                         return '사용자명을 입력하세요';
+                       }
+                       if (value.length < 3) {
+                         return '사용자명은 3자 이상이어야 합니다';
+                       }
+                       return null;
+                     },
+                   ),
+                   const SizedBox(height: 16),
+
+                   // Email Field
+                   TextFormField(
+                     controller: _emailController,
+                     decoration: const InputDecoration(
+                       labelText: '이메일',
+                       prefixIcon: Icon(Icons.email),
+                     ),
+                     keyboardType: TextInputType.emailAddress,
+                     validator: (value) {
+                       if (value == null || value.isEmpty) {
+                         return '이메일을 입력하세요';
+                       }
+                       if (!value.contains('@')) {
+                         return '올바른 이메일 형식이 아닙니다';
+                       }
+                       return null;
+                     },
+                   ),
+                   const SizedBox(height: 16),
+
+                   // Password Field
+                   TextFormField(
+                     controller: _passwordController,
+                     obscureText: _obscurePassword,
+                     decoration: InputDecoration(
+                       labelText: '비밀번호',
+                       prefixIcon: const Icon(Icons.lock),
+                       suffixIcon: IconButton(
+                         icon: Icon(
+                           _obscurePassword
+                               ? Icons.visibility
+                               : Icons.visibility_off,
+                         ),
+                         onPressed: () {
+                           setState(() {
+                             _obscurePassword = !_obscurePassword;
+                           });
+                         },
+                       ),
+                     ),
+                     validator: (value) {
+                       if (value == null || value.isEmpty) {
+                         return '비밀번호를 입력하세요';
+                       }
+                       if (value.length < 8) {
+                         return '비밀번호는 8자 이상이어야 합니다';
+                       }
+                       return null;
+                     },
+                   ),
+                   const SizedBox(height: 16),
+
+                   // Password Confirm Field
+                   TextFormField(
+                     controller: _passwordConfirmController,
+                     obscureText: _obscurePasswordConfirm,
+                     decoration: InputDecoration(
+                       labelText: '비밀번호 확인',
+                       prefixIcon: const Icon(Icons.lock_outline),
+                       suffixIcon: IconButton(
+                         icon: Icon(
+                           _obscurePasswordConfirm
+                               ? Icons.visibility
+                               : Icons.visibility_off,
+                         ),
+                         onPressed: () {
+                           setState(() {
+                             _obscurePasswordConfirm = !_obscurePasswordConfirm;
+                           });
+                         },
+                       ),
+                     ),
+                     validator: (value) {
+                       if (value != _passwordController.text) {
+                         return '비밀번호가 일치하지 않습니다';
+                       }
+                       return null;
+                     },
+                   ),
+                   const SizedBox(height: 16),
+
+                   // Phone Field (Optional)
+                   TextFormField(
+                     controller: _phoneController,
+                     decoration: const InputDecoration(
+                       labelText: '전화번호 (선택)',
+                       prefixIcon: Icon(Icons.phone),
+                       hintText: '010-1234-5678',
+                     ),
+                     keyboardType: TextInputType.phone,
+                   ),
+                   const SizedBox(height: 24),
+
+                   // Register Button
+                   ElevatedButton(
+                     onPressed: authState.isLoading ? null : _handleRegister,
+                     child: authState.isLoading
+                         ? const SizedBox(
+                             height: 20,
+                             width: 20,
+                             child: CircularProgressIndicator(strokeWidth: 2),
+                           )
+                         : const Text('회원가입'),
+                   ),
+                 ],
+               ),
+             ),
+           ),
+         ),
+       );
+     }
+
+     Future<void> _handleRegister() async {
+       if (_formKey.currentState!.validate()) {
+         try {
+           final request = RegisterRequest(
+             username: _usernameController.text,
+             email: _emailController.text,
+             password: _passwordController.text,
+             phoneNumber: _phoneController.text.isNotEmpty
+                 ? _phoneController.text
+                 : null,
+             receiveDailyReport: false,
+           );
+
+           await ref.read(authProvider.notifier).register(request);
+
+           if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+               const SnackBar(content: Text('회원가입이 완료되었습니다. 로그인해주세요.')),
+             );
+             context.pop();
+           }
+         } on DioException catch (e) {
+           final errorMessage = ErrorHandler.getUserFriendlyError(e);
+           if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(content: Text(errorMessage)),
+             );
+           }
+         }
+       }
+     }
+
+     @override
+     void dispose() {
+       _usernameController.dispose();
+       _emailController.dispose();
+       _passwordController.dispose();
+       _passwordConfirmController.dispose();
+       _phoneController.dispose();
+       super.dispose();
+     }
+   }
+   ```
+
+체크리스트:
+- [ ] 모든 데이터 모델 생성 완료
+- [ ] 코드 제너레이션 실행 완료 (*.g.dart 파일 생성됨)
+- [ ] AuthRepository 구현 완료
+- [ ] AuthProvider 구현 완료
+- [ ] SplashScreen 구현 완료
+- [ ] LoginScreen 구현 완료
+- [ ] RegisterScreen 구현 완료
+
+
+4.5 Phase 5: 라우팅 및 Main 앱 설정
+===================================
+
+예상 시간: 1-2시간
+
+⚠️ 주의: AssetListScreen, AssetDetailScreen, SearchScreen은 아직 구현 전이므로
+          일단 Placeholder를 사용합니다. Phase 6, 7에서 실제 화면으로 교체합니다.
+
+5.1. Placeholder 스크린 생성 (Phase 6, 7 전까지 임시 사용)
+
+   lib/features/assets/presentation/screens/asset_list_screen.dart (임시):
+   ```dart
+   import 'package:flutter/material.dart';
+
+   class AssetListScreen extends StatelessWidget {
+     const AssetListScreen({Key? key}) : super(key: key);
+
+     @override
+     Widget build(BuildContext context) {
+       return Scaffold(
+         appBar: AppBar(title: const Text('Assets')),
+         body: const Center(
+           child: Text('AssetListScreen - Phase 6에서 구현 예정'),
+         ),
+       );
+     }
+   }
+   ```
+
+   lib/features/assets/presentation/screens/asset_detail_screen.dart (임시):
+   ```dart
+   import 'package:flutter/material.dart';
+
+   class AssetDetailScreen extends StatelessWidget {
+     final String assetType;
+     final String assetId;
+
+     const AssetDetailScreen({
+       Key? key,
+       required this.assetType,
+       required this.assetId,
+     }) : super(key: key);
+
+     @override
+     Widget build(BuildContext context) {
+       return Scaffold(
+         appBar: AppBar(title: const Text('Asset Detail')),
+         body: Center(
+           child: Text('Asset $assetType/$assetId - Phase 6에서 구현 예정'),
+         ),
+       );
+     }
+   }
+   ```
+
+   lib/features/search/presentation/screens/search_screen.dart (임시):
+   ```dart
+   import 'package:flutter/material.dart';
+
+   class SearchScreen extends StatelessWidget {
+     const SearchScreen({Key? key}) : super(key: key);
+
+     @override
+     Widget build(BuildContext context) {
+       return Scaffold(
+         appBar: AppBar(title: const Text('Search')),
+         body: const Center(
+           child: Text('SearchScreen - Phase 7에서 구현 예정'),
+         ),
+       );
+     }
+   }
+   ```
+
+5.2. Router 설정 (lib/app/router.dart)
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'package:go_router/go_router.dart';
+   import '../features/auth/presentation/screens/splash_screen.dart';
+   import '../features/auth/presentation/screens/login_screen.dart';
+   import '../features/auth/presentation/screens/register_screen.dart';
+   import '../features/assets/presentation/screens/asset_list_screen.dart';
+   import '../features/assets/presentation/screens/asset_detail_screen.dart';
+   import '../features/search/presentation/screens/search_screen.dart';
+   import '../features/auth/presentation/providers/auth_provider.dart';
+
+   final routerProvider = Provider<GoRouter>((ref) {
+     return GoRouter(
+       initialLocation: '/splash',
+       redirect: (context, state) {
+         final authState = ref.read(authProvider);
+         final isAuth = authState.isAuthenticated;
+
+         // Don't redirect from splash - let it handle auth check
+         if (state.matchedLocation == '/splash') {
+           return null;
+         }
+
+         final isAuthPath = state.matchedLocation.startsWith('/login') ||
+                            state.matchedLocation.startsWith('/register');
+
+         // Redirect to login if not authenticated and not on auth pages
+         if (!isAuth && !isAuthPath) {
+           return '/login';
+         }
+
+         // Redirect to assets if authenticated and on auth pages
+         if (isAuth && isAuthPath) {
+           return '/assets';
+         }
+
+         return null;
+       },
+       routes: [
+         GoRoute(
+           path: '/splash',
+           builder: (context, state) => const SplashScreen(),
+         ),
+         GoRoute(
+           path: '/login',
+           builder: (context, state) => const LoginScreen(),
+         ),
+         GoRoute(
+           path: '/register',
+           builder: (context, state) => const RegisterScreen(),
+         ),
+         GoRoute(
+           path: '/assets',
+           builder: (context, state) => const AssetListScreen(),
+         ),
+         GoRoute(
+           path: '/assets/:type/:id',
+           builder: (context, state) {
+             final type = state.pathParameters['type']!;
+             final id = state.pathParameters['id']!;
+             return AssetDetailScreen(assetType: type, assetId: id);
+           },
+         ),
+         GoRoute(
+           path: '/search',
+           builder: (context, state) => const SearchScreen(),
+         ),
+       ],
+     );
+   });
+   ```
+
+5.3. App 위젯 (lib/app/app.dart)
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'router.dart';
+   import 'theme.dart';
+
+   class App extends ConsumerWidget {
+     const App({Key? key}) : super(key: key);
+
+     @override
+     Widget build(BuildContext context, WidgetRef ref) {
+       final router = ref.watch(routerProvider);
+
+       return MaterialApp.router(
+         title: 'Asset Folio',
+         theme: AppTheme.lightTheme,
+         darkTheme: AppTheme.darkTheme,
+         routerConfig: router,
+         debugShowCheckedModeBanner: false,
+       );
+     }
+   }
+   ```
+
+5.4. Main 파일 (lib/main.dart)
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'package:flutter_dotenv/flutter_dotenv.dart';
+   import 'app/app.dart';
+
+   Future<void> main() async {
+     WidgetsFlutterBinding.ensureInitialized();
+
+     // Load .env file
+     await dotenv.load(fileName: '.env');
+
+     runApp(
+       const ProviderScope(
+         child: App(),
+       ),
+     );
+   }
+   ```
+
+체크리스트:
+- [ ] Placeholder 스크린 3개 생성 완료
+- [ ] Router 설정 완료
+- [ ] App 위젯 구현 완료
+- [ ] main.dart 업데이트 완료
+- [ ] 앱 실행 가능 (로그인까지 동작 확인)
+
+⚠️ 이 시점에서 앱을 실행하면 로그인 → Asset List (Placeholder) 화면까지 동작합니다!
+
+
+4.6 Phase 6: 자산 목록 기능 구현
+================================
+
+예상 시간: 5-6시간
+
+⚠️ 이 Phase에서 Placeholder를 실제 구현으로 교체합니다.
+
+6.1. Asset 모델 (lib/features/assets/data/models/asset.dart)
+   ```dart
+   import 'package:json_annotation/json_annotation.dart';
+
+   part 'asset.g.dart';
+
+   @JsonSerializable()
+   class Asset {
+     final int id;
+     final String code;
+     final String name;
+
+     @JsonKey(name: 'current_price')
+     final double? currentPrice;
+
+     @JsonKey(name: 'change_rate')
+     final double? changeRate;
+
+     @JsonKey(name: 'change_amount')
+     final double? changeAmount;
+
+     @JsonKey(name: 'market_cap')
+     final double? marketCap;
+
+     final String? currency;
+
+     @JsonKey(name: 'asset_type')
+     final String assetType; // 'KR', 'US', 'CRYPTO'
+
+     Asset({
+       required this.id,
+       required this.code,
+       required this.name,
+       this.currentPrice,
+       this.changeRate,
+       this.changeAmount,
+       this.marketCap,
+       this.currency,
+       required this.assetType,
+     });
+
+     factory Asset.fromJson(Map<String, dynamic> json) => _$AssetFromJson(json);
+     Map<String, dynamic> toJson() => _$AssetToJson(this);
+
+     /// Helper method to convert asset type to API endpoint path
+     String getApiEndpoint() {
+       switch (assetType) {
+         case 'KR':
+           return '/stocks/kr';
+         case 'US':
+           return '/stocks/us';
+         case 'CRYPTO':
+           return '/crypto';
+         default:
+           throw ArgumentError('Unknown asset type: $assetType');
+       }
+     }
+   }
+
+   // Pagination Response
+   @JsonSerializable()
+   class AssetListResponse {
+     final int count;
+     final String? next;
+     final String? previous;
+     final List<Asset> results;
+
+     AssetListResponse({
+       required this.count,
+       this.next,
+       this.previous,
+       required this.results,
+     });
+
+     factory AssetListResponse.fromJson(Map<String, dynamic> json) =>
+         _$AssetListResponseFromJson(json);
+   }
+   ```
+
+6.2. AssetRepository (lib/features/assets/data/repositories/asset_repository.dart)
+   ```dart
+   import 'package:dio/dio.dart';
+   import '../../../../core/constants/api_constants.dart';
+   import '../models/asset.dart';
+
+   class AssetRepository {
+     final Dio _dio;
+
+     AssetRepository(this._dio);
+
+     Future<AssetListResponse> getKoreanStocks({int page = 1, int pageSize = 20}) async {
+       final response = await _dio.get(
+         ApiConstants.stocksKr,
+         queryParameters: {'page': page, 'page_size': pageSize},
+       );
+       return AssetListResponse.fromJson(response.data);
+     }
+
+     Future<AssetListResponse> getUsStocks({int page = 1, int pageSize = 20}) async {
+       final response = await _dio.get(
+         ApiConstants.stocksUs,
+         queryParameters: {'page': page, 'page_size': pageSize},
+       );
+       return AssetListResponse.fromJson(response.data);
+     }
+
+     Future<AssetListResponse> getCrypto({int page = 1, int pageSize = 20}) async {
+       final response = await _dio.get(
+         ApiConstants.crypto,
+         queryParameters: {'page': page, 'page_size': pageSize},
+       );
+       return AssetListResponse.fromJson(response.data);
+     }
+
+     Future<Asset> getAssetDetail(String assetType, String id) async {
+       final endpoint = assetType == 'KR'
+           ? '${ApiConstants.stocksKr}/$id'
+           : assetType == 'US'
+               ? '${ApiConstants.stocksUs}/$id'
+               : '${ApiConstants.crypto}/$id';
+
+       final response = await _dio.get(endpoint);
+       return Asset.fromJson(response.data);
+     }
+   }
+   ```
+
+   코드 제너레이션:
+   ```bash
+   flutter pub run build_runner build --delete-conflicting-outputs
+   ```
+
+6.3. AssetProvider (lib/features/assets/presentation/providers/asset_provider.dart)
+   ```dart
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import '../../../../core/providers/core_providers.dart';
+   import '../../data/repositories/asset_repository.dart';
+   import '../../data/models/asset.dart';
+
+   // Repository Provider
+   final assetRepositoryProvider = Provider<AssetRepository>((ref) {
+     final dio = ref.watch(dioProvider);
+     return AssetRepository(dio);
+   });
+
+   // Asset State
+   class AssetState {
+     final List<Asset> krAssets;
+     final List<Asset> usAssets;
+     final List<Asset> cryptoAssets;
+     final bool isLoading;
+     final String? error;
+     final bool hasMoreKr;
+     final bool hasMoreUs;
+     final bool hasMoreCrypto;
+
+     AssetState({
+       this.krAssets = const [],
+       this.usAssets = const [],
+       this.cryptoAssets = const [],
+       this.isLoading = false,
+       this.error,
+       this.hasMoreKr = true,
+       this.hasMoreUs = true,
+       this.hasMoreCrypto = true,
+     });
+
+     AssetState copyWith({
+       List<Asset>? krAssets,
+       List<Asset>? usAssets,
+       List<Asset>? cryptoAssets,
+       bool? isLoading,
+       String? error,
+       bool? hasMoreKr,
+       bool? hasMoreUs,
+       bool? hasMoreCrypto,
+     }) {
+       return AssetState(
+         krAssets: krAssets ?? this.krAssets,
+         usAssets: usAssets ?? this.usAssets,
+         cryptoAssets: cryptoAssets ?? this.cryptoAssets,
+         isLoading: isLoading ?? this.isLoading,
+         error: error,
+         hasMoreKr: hasMoreKr ?? this.hasMoreKr,
+         hasMoreUs: hasMoreUs ?? this.hasMoreUs,
+         hasMoreCrypto: hasMoreCrypto ?? this.hasMoreCrypto,
+       );
+     }
+   }
+
+   // Asset Notifier
+   class AssetNotifier extends StateNotifier<AssetState> {
+     final AssetRepository _repository;
+     int _krPage = 1;
+     int _usPage = 1;
+     int _cryptoPage = 1;
+
+     AssetNotifier(this._repository) : super(AssetState());
+
+     Future<void> loadKoreanStocks({bool refresh = false}) async {
+       if (refresh) {
+         _krPage = 1;
+         state = state.copyWith(krAssets: [], hasMoreKr: true);
+       }
+
+       if (!state.hasMoreKr || state.isLoading) return;
+
+       state = state.copyWith(isLoading: true, error: null);
+
+       try {
+         final response = await _repository.getKoreanStocks(page: _krPage);
+         final newAssets = refresh ? response.results : [...state.krAssets, ...response.results];
+
+         state = state.copyWith(
+           krAssets: newAssets,
+           isLoading: false,
+           hasMoreKr: response.next != null,
+         );
+
+         _krPage++;
+       } catch (e) {
+         state = state.copyWith(isLoading: false, error: e.toString());
+       }
+     }
+
+     Future<void> loadUsStocks({bool refresh = false}) async {
+       if (refresh) {
+         _usPage = 1;
+         state = state.copyWith(usAssets: [], hasMoreUs: true);
+       }
+
+       if (!state.hasMoreUs || state.isLoading) return;
+
+       state = state.copyWith(isLoading: true, error: null);
+
+       try {
+         final response = await _repository.getUsStocks(page: _usPage);
+         final newAssets = refresh ? response.results : [...state.usAssets, ...response.results];
+
+         state = state.copyWith(
+           usAssets: newAssets,
+           isLoading: false,
+           hasMoreUs: response.next != null,
+         );
+
+         _usPage++;
+       } catch (e) {
+         state = state.copyWith(isLoading: false, error: e.toString());
+       }
+     }
+
+     Future<void> loadCrypto({bool refresh = false}) async {
+       if (refresh) {
+         _cryptoPage = 1;
+         state = state.copyWith(cryptoAssets: [], hasMoreCrypto: true);
+       }
+
+       if (!state.hasMoreCrypto || state.isLoading) return;
+
+       state = state.copyWith(isLoading: true, error: null);
+
+       try {
+         final response = await _repository.getCrypto(page: _cryptoPage);
+         final newAssets = refresh ? response.results : [...state.cryptoAssets, ...response.results];
+
+         state = state.copyWith(
+           cryptoAssets: newAssets,
+           isLoading: false,
+           hasMoreCrypto: response.next != null,
+         );
+
+         _cryptoPage++;
+       } catch (e) {
+         state = state.copyWith(isLoading: false, error: e.toString());
+       }
+     }
+   }
+
+   // Asset Provider
+   final assetProvider = StateNotifierProvider<AssetNotifier, AssetState>((ref) {
+     final repository = ref.watch(assetRepositoryProvider);
+     return AssetNotifier(repository);
+   });
+   ```
+
+6.4. AssetListScreen (lib/features/assets/presentation/screens/asset_list_screen.dart) - Placeholder 교체
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'package:go_router/go_router.dart';
+   import '../providers/asset_provider.dart';
+   import '../../../../features/auth/presentation/providers/auth_provider.dart';
+   import '../widgets/asset_card.dart';
+
+   class AssetListScreen extends ConsumerStatefulWidget {
+     const AssetListScreen({Key? key}) : super(key: key);
+
+     @override
+     ConsumerState<AssetListScreen> createState() => _AssetListScreenState();
+   }
+
+   class _AssetListScreenState extends ConsumerState<AssetListScreen>
+       with SingleTickerProviderStateMixin {
+     late TabController _tabController;
+     final ScrollController _krScrollController = ScrollController();
+     final ScrollController _usScrollController = ScrollController();
+     final ScrollController _cryptoScrollController = ScrollController();
+
+     @override
+     void initState() {
+       super.initState();
+       _tabController = TabController(length: 3, vsync: this);
+
+       // Load initial data
+       Future.microtask(() {
+         ref.read(assetProvider.notifier).loadKoreanStocks();
+       });
+
+       // Setup scroll listeners for pagination
+       _krScrollController.addListener(_onKrScroll);
+       _usScrollController.addListener(_onUsScroll);
+       _cryptoScrollController.addListener(_onCryptoScroll);
+
+       _tabController.addListener(() {
+         if (_tabController.index == 1 && ref.read(assetProvider).usAssets.isEmpty) {
+           ref.read(assetProvider.notifier).loadUsStocks();
+         } else if (_tabController.index == 2 && ref.read(assetProvider).cryptoAssets.isEmpty) {
+           ref.read(assetProvider.notifier).loadCrypto();
+         }
+       });
+     }
+
+     void _onKrScroll() {
+       if (_krScrollController.position.pixels >= _krScrollController.position.maxScrollExtent * 0.8) {
+         ref.read(assetProvider.notifier).loadKoreanStocks();
+       }
+     }
+
+     void _onUsScroll() {
+       if (_usScrollController.position.pixels >= _usScrollController.position.maxScrollExtent * 0.8) {
+         ref.read(assetProvider.notifier).loadUsStocks();
+       }
+     }
+
+     void _onCryptoScroll() {
+       if (_cryptoScrollController.position.pixels >= _cryptoScrollController.position.maxScrollExtent * 0.8) {
+         ref.read(assetProvider.notifier).loadCrypto();
+       }
+     }
+
+     @override
+     Widget build(BuildContext context) {
+       final assetState = ref.watch(assetProvider);
+
+       return Scaffold(
+         appBar: AppBar(
+           title: const Text('Asset Folio'),
+           actions: [
+             IconButton(
+               icon: const Icon(Icons.search),
+               onPressed: () => context.push('/search'),
+             ),
+             IconButton(
+               icon: const Icon(Icons.logout),
+               onPressed: () async {
+                 await ref.read(authProvider.notifier).logout();
+                 if (context.mounted) {
+                   context.go('/login');
+                 }
+               },
+             ),
+           ],
+           bottom: TabBar(
+             controller: _tabController,
+             tabs: const [
+               Tab(text: '한국'),
+               Tab(text: '미국'),
+               Tab(text: '암호화폐'),
+             ],
+           ),
+         ),
+         body: TabBarView(
+           controller: _tabController,
+           children: [
+             _buildAssetList(assetState.krAssets, _krScrollController, assetState.isLoading),
+             _buildAssetList(assetState.usAssets, _usScrollController, assetState.isLoading),
+             _buildAssetList(assetState.cryptoAssets, _cryptoScrollController, assetState.isLoading),
+           ],
+         ),
+       );
+     }
+
+     Widget _buildAssetList(List assets, ScrollController controller, bool isLoading) {
+       if (assets.isEmpty && isLoading) {
+         return const Center(child: CircularProgressIndicator());
+       }
+
+       if (assets.isEmpty) {
+         return const Center(child: Text('데이터가 없습니다'));
+       }
+
+       return RefreshIndicator(
+         onRefresh: () async {
+           if (_tabController.index == 0) {
+             await ref.read(assetProvider.notifier).loadKoreanStocks(refresh: true);
+           } else if (_tabController.index == 1) {
+             await ref.read(assetProvider.notifier).loadUsStocks(refresh: true);
+           } else {
+             await ref.read(assetProvider.notifier).loadCrypto(refresh: true);
+           }
+         },
+         child: ListView.builder(
+           controller: controller,
+           itemCount: assets.length + (isLoading ? 1 : 0),
+           itemBuilder: (context, index) {
+             if (index >= assets.length) {
+               return const Center(
+                 child: Padding(
+                   padding: EdgeInsets.all(16.0),
+                   child: CircularProgressIndicator(),
+                 ),
+               );
+             }
+
+             return AssetCard(
+               asset: assets[index],
+               onTap: () {
+                 final asset = assets[index];
+                 context.push('/assets/${asset.assetType}/${asset.id}');
+               },
+             );
+           },
+         ),
+       );
+     }
+
+     @override
+     void dispose() {
+       _tabController.dispose();
+       _krScrollController.dispose();
+       _usScrollController.dispose();
+       _cryptoScrollController.dispose();
+       super.dispose();
+     }
+   }
+   ```
+
+6.5. AssetCard 위젯 (lib/features/assets/presentation/widgets/asset_card.dart)
+   ```dart
+   import 'package:flutter/material.dart';
+   import '../../data/models/asset.dart';
+   import 'package:intl/intl.dart';
+
+   class AssetCard extends StatelessWidget {
+     final Asset asset;
+     final VoidCallback onTap;
+
+     const AssetCard({
+       Key? key,
+       required this.asset,
+       required this.onTap,
+     }) : super(key: key);
+
+     @override
+     Widget build(BuildContext context) {
+       final isPositive = (asset.changeRate ?? 0) >= 0;
+       final changeColor = isPositive ? Colors.red : Colors.blue;
+
+       return Card(
+         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+         child: ListTile(
+           onTap: onTap,
+           title: Text(
+             asset.name,
+             style: const TextStyle(fontWeight: FontWeight.bold),
+           ),
+           subtitle: Text(asset.code),
+           trailing: Column(
+             mainAxisAlignment: MainAxisAlignment.center,
+             crossAxisAlignment: CrossAxisAlignment.end,
+             children: [
+               Text(
+                 _formatPrice(asset.currentPrice),
+                 style: const TextStyle(
+                   fontWeight: FontWeight.bold,
+                   fontSize: 16,
+                 ),
+               ),
+               Text(
+                 '${isPositive ? '+' : ''}${_formatRate(asset.changeRate)}%',
+                 style: TextStyle(
+                   color: changeColor,
+                   fontWeight: FontWeight.bold,
+                 ),
+               ),
+             ],
+           ),
+         ),
+       );
+     }
+
+     String _formatPrice(double? price) {
+       if (price == null) return '-';
+       final formatter = NumberFormat.currency(symbol: asset.currency ?? '\$', decimalDigits: 2);
+       return formatter.format(price);
+     }
+
+     String _formatRate(double? rate) {
+       if (rate == null) return '0.00';
+       return rate.toStringAsFixed(2);
+     }
+   }
+   ```
+
+6.6. AssetDetailScreen (lib/features/assets/presentation/screens/asset_detail_screen.dart) - Placeholder 교체
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import '../../data/models/asset.dart';
+   import '../../data/repositories/asset_repository.dart';
+   import '../../../../core/providers/core_providers.dart';
+   import 'package:intl/intl.dart';
+
+   final assetDetailProvider = FutureProvider.family<Asset, Map<String, String>>((ref, params) async {
+     final repository = AssetRepository(ref.watch(dioProvider));
+     return await repository.getAssetDetail(params['type']!, params['id']!);
+   });
+
+   class AssetDetailScreen extends ConsumerWidget {
+     final String assetType;
+     final String assetId;
+
+     const AssetDetailScreen({
+       Key? key,
+       required this.assetType,
+       required this.assetId,
+     }) : super(key: key);
+
+     @override
+     Widget build(BuildContext context, WidgetRef ref) {
+       final assetAsync = ref.watch(assetDetailProvider({'type': assetType, 'id': assetId}));
+
+       return Scaffold(
+         appBar: AppBar(
+           title: const Text('자산 상세'),
+         ),
+         body: assetAsync.when(
+           data: (asset) => _buildDetail(context, asset),
+           loading: () => const Center(child: CircularProgressIndicator()),
+           error: (error, stack) => Center(child: Text('Error: $error')),
+         ),
+       );
+     }
+
+     Widget _buildDetail(BuildContext context, Asset asset) {
+       final isPositive = (asset.changeRate ?? 0) >= 0;
+       final changeColor = isPositive ? Colors.red : Colors.blue;
+
+       return SingleChildScrollView(
+         padding: const EdgeInsets.all(16),
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+             Text(
+               asset.name,
+               style: Theme.of(context).textTheme.headlineMedium,
+             ),
+             const SizedBox(height: 8),
+             Text(
+               asset.code,
+               style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                     color: Colors.grey,
+                   ),
+             ),
+             const SizedBox(height: 24),
+
+             Card(
+               child: Padding(
+                 padding: const EdgeInsets.all(16),
+                 child: Column(
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+                     Row(
+                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                       children: [
+                         const Text('현재가', style: TextStyle(fontSize: 16)),
+                         Text(
+                           _formatPrice(asset.currentPrice, asset.currency),
+                           style: const TextStyle(
+                             fontSize: 24,
+                             fontWeight: FontWeight.bold,
+                           ),
+                         ),
+                       ],
+                     ),
+                     const SizedBox(height: 16),
+                     Row(
+                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                       children: [
+                         const Text('변동률', style: TextStyle(fontSize: 16)),
+                         Text(
+                           '${isPositive ? '+' : ''}${_formatRate(asset.changeRate)}%',
+                           style: TextStyle(
+                             fontSize: 20,
+                             fontWeight: FontWeight.bold,
+                             color: changeColor,
+                           ),
+                         ),
+                       ],
+                     ),
+                     const SizedBox(height: 16),
+                     Row(
+                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                       children: [
+                         const Text('변동금액', style: TextStyle(fontSize: 16)),
+                         Text(
+                           '${isPositive ? '+' : ''}${_formatPrice(asset.changeAmount, asset.currency)}',
+                           style: TextStyle(
+                             fontSize: 18,
+                             fontWeight: FontWeight.bold,
+                             color: changeColor,
+                           ),
+                         ),
+                       ],
+                     ),
+                     if (asset.marketCap != null) ...[
+                       const SizedBox(height: 16),
+                       Row(
+                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                         children: [
+                           const Text('시가총액', style: TextStyle(fontSize: 16)),
+                           Text(
+                             _formatPrice(asset.marketCap, asset.currency),
+                             style: const TextStyle(fontSize: 18),
+                           ),
+                         ],
+                       ),
+                     ],
+                   ],
+                 ),
+               ),
+             ),
+          ],
+         ),
+       );
+     }
+
+     String _formatPrice(double? price, String? currency) {
+       if (price == null) return '-';
+       final formatter = NumberFormat.currency(symbol: currency ?? '\$', decimalDigits: 2);
+       return formatter.format(price);
+     }
+
+     String _formatRate(double? rate) {
+       if (rate == null) return '0.00';
+       return rate.toStringAsFixed(2);
+     }
+   }
+   ```
+
+체크리스트:
+- [ ] Asset 모델 생성 및 코드 제너레이션
+- [ ] AssetRepository 구현 (pagination 포함)
+- [ ] AssetProvider 구현 (infinite scroll 지원)
+- [ ] AssetListScreen 구현 (Placeholder 교체)
+- [ ] AssetCard 위젯 구현
+- [ ] AssetDetailScreen 구현 (Placeholder 교체)
+- [ ] Pull-to-refresh 동작 확인
+- [ ] Infinite scroll 동작 확인
+
+
+4.7 Phase 7: 검색 기능 구현
+===========================
+
+예상 시간: 2-3시간
+
+7.1. SearchRepository (lib/features/search/data/repositories/search_repository.dart)
+   ```dart
+   import 'package:dio/dio.dart';
+   import '../../../../core/constants/api_constants.dart';
+   import '../../../assets/data/models/asset.dart';
+
+   class SearchRepository {
+     final Dio _dio;
+
+     SearchRepository(this._dio);
+
+     /// Backend search endpoints:
+     /// - GET /stocks/kr/search?q={query}
+     /// - GET /stocks/us/search?q={query}
+     /// - GET /crypto/search?q={query}
+     ///
+     /// Response format: Raw List [{asset}, {asset}, ...]
+     /// (Not paginated for search - returns all matches)
+     ///
+     /// ⚠️ If your backend returns {"results": [...]}, modify parsing below
+     Future<List<Asset>> searchAssets(String query, String assetType) async {
+       final endpoint = assetType == 'KR'
+           ? '${ApiConstants.stocksKr}/search'
+           : assetType == 'US'
+               ? '${ApiConstants.stocksUs}/search'
+               : '${ApiConstants.crypto}/search';
+
+       final response = await _dio.get(
+         endpoint,
+         queryParameters: {'q': query},
+       );
+
+       // Handle both List and paginated response formats
+       final List<dynamic> results;
+       if (response.data is List) {
+         // Direct list response: [{}, {}, ...]
+         results = response.data;
+       } else if (response.data is Map && response.data.containsKey('results')) {
+         // Paginated response: {"count": 10, "results": [...]}
+         results = response.data['results'];
+       } else {
+         throw Exception('Unexpected search response format: ${response.data.runtimeType}');
+       }
+
+       return results.map((json) => Asset.fromJson(json as Map<String, dynamic>)).toList();
+     }
+   }
+   ```
+
+7.2. SearchProvider (lib/features/search/presentation/providers/search_provider.dart)
+   ```dart
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import '../../../../core/providers/core_providers.dart';
+   import '../../data/repositories/search_repository.dart';
+   import '../../../assets/data/models/asset.dart';
+   import 'dart:async';
+
+   // Repository Provider
+   final searchRepositoryProvider = Provider<SearchRepository>((ref) {
+     final dio = ref.watch(dioProvider);
+     return SearchRepository(dio);
+   });
+
+   // Search State
+   class SearchState {
+     final List<Asset> results;
+     final bool isLoading;
+     final String? error;
+     final String query;
+
+     SearchState({
+       this.results = const [],
+       this.isLoading = false,
+       this.error,
+       this.query = '',
+     });
+
+     SearchState copyWith({
+       List<Asset>? results,
+       bool? isLoading,
+       String? error,
+       String? query,
+     }) {
+       return SearchState(
+         results: results ?? this.results,
+         isLoading: isLoading ?? this.isLoading,
+         error: error,
+         query: query ?? this.query,
+       );
+     }
+   }
+
+   // Search Notifier with Debounce
+   class SearchNotifier extends StateNotifier<SearchState> {
+     final SearchRepository _repository;
+     Timer? _debounce;
+
+     SearchNotifier(this._repository) : super(SearchState());
+
+     void search(String query, String assetType) {
+       if (_debounce?.isActive ?? false) _debounce!.cancel();
+
+       state = state.copyWith(query: query);
+
+       if (query.isEmpty) {
+         state = state.copyWith(results: [], isLoading: false);
+         return;
+       }
+
+       state = state.copyWith(isLoading: true, error: null);
+
+       _debounce = Timer(const Duration(milliseconds: 500), () async {
+         try {
+           final results = await _repository.searchAssets(query, assetType);
+           state = state.copyWith(
+             results: results,
+             isLoading: false,
+           );
+         } catch (e) {
+           state = state.copyWith(
+             isLoading: false,
+             error: e.toString(),
+           );
+         }
+       });
+     }
+
+     @override
+     void dispose() {
+       _debounce?.cancel();
+       super.dispose();
+     }
+   }
+
+   // Search Provider
+   final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
+     final repository = ref.watch(searchRepositoryProvider);
+     return SearchNotifier(repository);
+   });
+   ```
+
+7.3. SearchScreen (lib/features/search/presentation/screens/search_screen.dart) - Placeholder 교체
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_riverpod/flutter_riverpod.dart';
+   import 'package:go_router/go_router.dart';
+   import '../providers/search_provider.dart';
+   import '../../../assets/presentation/widgets/asset_card.dart';
+
+   class SearchScreen extends ConsumerStatefulWidget {
+     const SearchScreen({Key? key}) : super(key: key);
+
+     @override
+     ConsumerState<SearchScreen> createState() => _SearchScreenState();
+   }
+
+   class _SearchScreenState extends ConsumerState<SearchScreen>
+       with SingleTickerProviderStateMixin {
+     final TextEditingController _searchController = TextEditingController();
+     late TabController _tabController;
+
+     @override
+     void initState() {
+       super.initState();
+       _tabController = TabController(length: 3, vsync: this);
+       _tabController.addListener(_onTabChanged);
+     }
+
+     void _onTabChanged() {
+       if (_searchController.text.isNotEmpty) {
+         _performSearch();
+       }
+     }
+
+     void _performSearch() {
+       final assetType = _tabController.index == 0
+           ? 'KR'
+           : _tabController.index == 1
+               ? 'US'
+               : 'CRYPTO';
+       ref.read(searchProvider.notifier).search(_searchController.text, assetType);
+     }
+
+     @override
+     Widget build(BuildContext context) {
+       final searchState = ref.watch(searchProvider);
+
+       return Scaffold(
+         appBar: AppBar(
+           title: TextField(
+             controller: _searchController,
+             autofocus: true,
+             decoration: const InputDecoration(
+               hintText: '자산 검색...',
+               border: InputBorder.none,
+             ),
+             onChanged: (value) => _performSearch(),
+           ),
+           bottom: TabBar(
+             controller: _tabController,
+             tabs: const [
+               Tab(text: '한국'),
+               Tab(text: '미국'),
+               Tab(text: '암호화폐'),
+             ],
+           ),
+         ),
+         body: _buildSearchResults(searchState),
+       );
+     }
+
+     Widget _buildSearchResults(SearchState state) {
+       if (state.query.isEmpty) {
+         return const Center(
+           child: Text('검색어를 입력하세요'),
+         );
+       }
+
+       if (state.isLoading) {
+         return const Center(child: CircularProgressIndicator());
+       }
+
+       if (state.error != null) {
+         return Center(child: Text('Error: ${state.error}'));
+       }
+
+       if (state.results.isEmpty) {
+         return const Center(child: Text('검색 결과가 없습니다'));
+       }
+
+       return ListView.builder(
+         itemCount: state.results.length,
+         itemBuilder: (context, index) {
+           final asset = state.results[index];
+           return AssetCard(
+             asset: asset,
+             onTap: () {
+               context.push('/assets/${asset.assetType}/${asset.id}');
+             },
+           );
+         },
+       );
+     }
+
+     @override
+     void dispose() {
+       _searchController.dispose();
+       _tabController.dispose();
+       super.dispose();
+     }
+   }
+   ```
+
+체크리스트:
+- [ ] SearchRepository 구현
+- [ ] SearchProvider 구현 (500ms debounce 포함)
+- [ ] SearchScreen 구현 (Placeholder 교체)
+- [ ] 검색 기능 동작 확인
+- [ ] Debounce 동작 확인
+
+
+4.8 Phase 8: 테스트 작성
+========================
+
+예상 시간: 3-4시간
+
+8.1. Unit Test
+8.2. Widget Test
+8.3. Manual Test
+
+Manual Test Checklist:
+- [ ] 로그인 성공 (testuser / testpass123)
+- [ ] 로그인 실패 (잘못된 비밀번호 시 에러 메시지)
+- [ ] 자동 로그인 (앱 재시작 시 세션 유지)
+- [ ] 토큰 만료 시 자동 갱신
+- [ ] 자산 목록 조회 (한국/미국/암호화폐 탭 전환)
+- [ ] 자산 검색
+- [ ] 자산 상세 보기
+- [ ] 로그아웃
+- [ ] 네트워크 없을 때 에러 메시지
+
+================================================================================
+5. API 연동 명세
+================================================================================
+
+5.1 Base URL
+------------
+개발: http://localhost:8001/api/v1
+프로덕션: https://api.assetfolio.com/api/v1 (배포 시 설정)
+
+5.2 인증 엔드포인트
+------------------
+POST /auth/token         - 로그인 (OAuth 2.0 password grant)
+POST /auth/register      - 회원가입
+GET /auth/userinfo       - 사용자 정보 조회 (OIDC)
+POST /auth/logout        - 로그아웃
+POST /auth/revoke        - 토큰 무효화
+
+5.3 자산 엔드포인트
+------------------
+GET /stocks/kr           - 한국 주식 목록 (pagination)
+GET /stocks/us           - 미국 주식 목록 (pagination)
+GET /crypto              - 암호화폐 목록 (pagination)
+GET /stocks/kr/:id       - 주식 상세
+GET /stocks/us/:id       - 미국 주식 상세
+GET /crypto/:id          - 암호화폐 상세
+
+검색 엔드포인트:
+GET /stocks/kr/search?q={query}    - 한국 주식 검색
+GET /stocks/us/search?q={query}    - 미국 주식 검색
+GET /crypto/search?q={query}       - 암호화폐 검색
+
+⚠️ IMPORTANT: 구현 전에 http://localhost:8001/api/docs 에서 실제 엔드포인트 확인!
+   특히 search 엔드포인트가 존재하는지 반드시 확인하세요.
+
+참고: 백엔드 API 문서는 http://localhost:8001/api/docs 에서 확인
+
+================================================================================
+6. 보안 고려사항
+================================================================================
+
+6.1 토큰 저장
+-------------
+- flutter_secure_storage 사용
+- iOS: Keychain (Info.plist 설정 완료)
+- Android: EncryptedSharedPreferences (자동)
+- ⚠️ 절대 SharedPreferences 사용 금지
+
+6.2 네트워크 보안
+----------------
+- 개발: HTTP (localhost:8001)
+- 프로덕션: HTTPS 필수
+- Certificate Pinning (프로덕션 배포 시 고려)
+
+6.3 디버그 로그
+--------------
+- kDebugMode 플래그로 프로덕션에서 로그 제거
+- 민감 정보 (토큰, 비밀번호) 로그 출력 금지
+
+================================================================================
+7. 빌드 및 배포
+================================================================================
+
+7.1 iOS 빌드
+------------
+1. Xcode 설정
+   - Bundle ID: com.assetfolio.assetFolioMobile
+   - Signing: Apple Developer 계정 필요
+
+2. 빌드
+   ```bash
+   flutter build ios --release
+   ```
+
+3. 배포
+   - TestFlight (베타)
+   - App Store Connect
+
+7.2 Android 빌드
+---------------
+1. 키 생성
+   ```bash
+   keytool -genkey -v -keystore ~/asset-folio-key.jks \
+     -keyalg RSA -keysize 2048 -validity 10000 \
+     -alias asset-folio
+   ```
+
+2. 빌드
+   ```bash
+   flutter build apk --release
+   flutter build appbundle --release
+   ```
+
+3. 배포
+   - Google Play Console (내부 테스트)
+   - Google Play Store
+
+================================================================================
+8. 구현 순서 및 일정
+================================================================================
+
+총 예상 기간: 7-8주 (개인 프로젝트 기준, 주당 10-15시간 작업, ADHD 고려 50% 버퍼)
+
+Week 1: 환경 설정 및 Core 레이어
+- Day 1: Phase 0 (환경 검증)
+- Day 2-3: Phase 1 (프로젝트 설정)
+- Day 4-5: Phase 2 (Core 레이어)
+
+Week 2: 백엔드 연동 및 인증
+- Day 1: Phase 3 (백엔드 통합 테스트)
+- Day 2-4: Phase 4 (인증 기능 - 모델, Repository)
+- Day 5: Phase 4 (인증 기능 - Provider, UI)
+
+Week 3: 인증 완성 및 라우팅
+- Day 1-2: Phase 4 완성 (LoginScreen, RegisterScreen)
+- Day 3-4: Phase 5 (라우팅 설정)
+- Day 5: 통합 테스트 및 버그 수정
+
+Week 4-5: 자산 목록 기능
+- Week 4: Phase 6 (Asset 모델, Repository, Provider)
+- Week 5: Phase 6 (AssetListScreen, AssetDetailScreen, UI)
+
+Week 6: 검색 및 마무리
+- Day 1-2: Phase 7 (SearchScreen)
+- Day 3-5: 버그 수정, UI 개선
+
+Week 7: 테스트
+- Day 1-3: Phase 8 (Unit, Widget, Integration Test)
+- Day 4-5: Manual Testing, 최종 버그 수정
+
+Week 8: 빌드 및 베타 배포
+- Day 1-2: iOS 빌드 및 TestFlight
+- Day 3-4: Android 빌드 및 Play Console
+- Day 5: 문서화 (README, 사용자 가이드)
+
+================================================================================
+9. 성공 기준
+================================================================================
+
+9.1 기능적 요구사항
+------------------
+✅ 사용자 회원가입/로그인 가능
+✅ 자동 로그인 (앱 재시작 시)
+✅ 자산 목록 조회 (한국/미국/암호화폐)
+✅ 자산 검색 기능
+✅ 자산 상세 정보 조회
+✅ 로그아웃 기능
+✅ 토큰 자동 갱신
+
+9.2 비기능적 요구사항
+--------------------
+✅ 60 FPS 유지 (Flutter DevTools로 측정)
+✅ 앱 시작 시간 < 3초
+✅ API 응답 대기 시 로딩 표시
+✅ 에러 발생 시 사용자 친화적 메시지
+✅ iOS/Android 동일한 UX
+✅ 다크모드 지원
+
+9.3 코드 품질
+------------
+✅ flutter analyze 0 issues
+✅ 테스트 커버리지 > 60%
+✅ README.md 작성 완료
+
+================================================================================
+10. 리스크 및 대응 방안
+================================================================================
+
+리스크 1: OAuth 2.0 토큰 갱신 실패
+대응: Mutex 패턴으로 race condition 방지, 최대 3번 재시도 후 로그아웃
+
+리스크 2: 백엔드 API 스키마 변경
+대응: Phase 3의 백엔드 통합 테스트로 조기 발견, API 버전 관리
+
+리스크 3: 플랫폼별 네이티브 이슈
+대응: iOS 13+, Android 8+ 실제 디바이스 테스트
+
+리스크 4: 성능 이슈 (리스트 렌더링)
+대응: ListView.builder, 이미지 캐싱, Flutter DevTools 프로파일링
+
+리스크 5: ProGuard로 JSON 파싱 실패 (Android Release)
+대응: proguard-rules.pro에 @JsonSerializable 규칙 추가
+
+리스크 6: iOS Keychain 접근 실패
+대응: Info.plist에 KeychainAccessGroups 추가
+
+리스크 7: 네트워크 없을 때 앱 멈춤
+대응: connectivity_plus로 네트워크 상태 체크, 오프라인 메시지 표시
+
+================================================================================
+11. 참고 자료
+================================================================================
+
+Flutter 공식 문서:
+- https://flutter.dev/docs
+- https://pub.dev/packages/riverpod
+- https://pub.dev/packages/dio
+- https://pub.dev/packages/go_router
+
+백엔드 문서:
+- README: /Users/indent/Desktop/Noah/repo/asset-backend/README.md
+- API Docs: http://localhost:8001/api/docs
+
+웹 프론트엔드 참고:
+- /Users/indent/Desktop/Noah/repo/asset-frontend/src/
+
+아키텍처:
+- Clean Architecture in Flutter
+- Feature-First Architecture
+
+================================================================================
+12. 중요 체크포인트
+================================================================================
+
+⚠️ Phase 0 완료 전에는 절대 진행하지 마세요!
+⚠️ Phase 3 백엔드 통합 테스트를 반드시 통과해야 합니다!
+⚠️ 코드 제너레이션을 잊지 마세요: build_runner build --delete-conflicting-outputs
+⚠️ .env 파일을 .gitignore에 추가하세요!
+
+================================================================================
+EOF
+================================================================================

@@ -8,7 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  POSTGRES_DB: kstock_test
+  POSTGRES_DB: asset_test
   POSTGRES_USER: postgres
   POSTGRES_PASSWORD: postgres
 
@@ -133,6 +133,6 @@ jobs:
       with:
         context: .
         push: false
-        tags: kstock-reporter:latest
+        tags: noah-asset-backend:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
