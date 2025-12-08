@@ -19,7 +19,7 @@ from api.schemas import (
 )
 from api.dependencies import get_current_user
 from apps.accounts.models import User
-from apps.accounts.services import AuthService
+from apps.accounts.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 
