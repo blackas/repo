@@ -1,12 +1,8 @@
-/**
- * Zustand 인증 스토어
- * 전역 인증 상태 관리
- */
-
 import { create } from 'zustand';
 import type { User, AuthState, RegisterRequest } from '../types/auth';
 import { authService } from '../services/authService';
 import { tokenStorage } from '../utils/tokenStorage';
+import { toastUtils } from '../utils/toast';
 
 interface AuthStore extends AuthState {
   // Actions
@@ -49,8 +45,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
         isAuthenticated: true,
         isLoading: false,
       });
+      toastUtils.success('Logged in successfully');
     } catch (error) {
       set({ isLoading: false });
+      toastUtils.error('Login failed. Please check your credentials.');
       throw error;
     }
   },
@@ -65,6 +63,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       }
     } catch (error) {
       console.error('Logout error:', error);
+      toastUtils.error('Logout failed.');
     } finally {
       // 로컬 토큰 삭제
       tokenStorage.clearTokens();
@@ -74,6 +73,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         user: null,
         isAuthenticated: false,
       });
+      toastUtils.success('Logged out successfully');
     }
   },
 
@@ -84,9 +84,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
     try {
       const user = await authService.register(data);
       set({ isLoading: false });
+      toastUtils.success('Registration successful. Please log in.');
       return user;
     } catch (error) {
       set({ isLoading: false });
+      toastUtils.error('Registration failed. Please try again.');
       throw error;
     }
   },

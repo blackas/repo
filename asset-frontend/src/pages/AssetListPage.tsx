@@ -15,35 +15,38 @@ import {
   Box,
 } from '@mui/material';
 import type { AssetType } from '../types';
-import useStore from '../store/useStore';
+import useAssetStore from '../store/assetStore';
 import { apiService } from '../services/api';
 
 interface AssetListPageProps {
   assetType: AssetType;
   title: string;
+  market?: 'KRX' | 'NASDAQ';
 }
 
-function AssetListPage({ assetType, title }: AssetListPageProps) {
+function AssetListPage({ assetType, title, market }: AssetListPageProps) {
   const navigate = useNavigate();
-  const { assets, setAssets, setLoading, setError } = useStore();
-  const assetState = assets[assetType];
+  const {
+    [assetType]: assetState,
+    setAssets,
+    setLoading,
+    setError,
+  } = useAssetStore();
 
   useEffect(() => {
     const fetchAssets = async () => {
       setLoading(assetType, true);
-      setError(assetType, null);
       try {
-        const data = await apiService.getAssets(assetType);
+        const params = market ? { market } : {};
+        const data = await apiService.getAssets(assetType, params);
         setAssets(assetType, data);
       } catch (error) {
         setError(assetType, error instanceof Error ? error.message : 'Failed to fetch assets');
-      } finally {
-        setLoading(assetType, false);
       }
     };
 
     fetchAssets();
-  }, [assetType, setAssets, setLoading, setError]);
+  }, [assetType, market, setAssets, setLoading, setError]);
 
   const handleRowClick = (assetId: string | number) => {
     navigate(`/assets/${assetType}/${assetId}`);

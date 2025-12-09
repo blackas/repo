@@ -109,11 +109,11 @@ axiosInstance.interceptors.response.use(
 // Get endpoint based on asset type
 const getEndpointForAssetType = (assetType: AssetType): string => {
   const endpointMap: Record<AssetType, string> = {
-    'kr-stock': '/stocks/kr',
-    'us-stock': '/stocks/us',
+    'kr-stock': '/stocks',
+    'us-stock': '/stocks',
     'crypto': '/crypto',
   };
-  return endpointMap[assetType] || '/stocks/kr';
+  return endpointMap[assetType];
 };
 
 // API Functions
@@ -129,32 +129,6 @@ export const apiService = {
   getAssetDetail: async (assetType: AssetType, assetId: string | number): Promise<AssetDetail> => {
     const endpoint = getEndpointForAssetType(assetType);
     const response = await axiosInstance.get(`${endpoint}/${assetId}`);
-    return response.data;
-  },
-
-  // Search assets across types
-  searchAssets: async (query: string, assetType?: AssetType): Promise<Asset[]> => {
-    if (assetType) {
-      const endpoint = getEndpointForAssetType(assetType);
-      const response = await axiosInstance.get(`${endpoint}/search`, { params: { q: query } });
-      return response.data.results || response.data;
-    }
-    // Search across all types
-    const response = await axiosInstance.get('/search', { params: { q: query } });
-    return response.data.results || response.data;
-  },
-
-  // Get reports for an asset
-  getReports: async (assetType: AssetType, assetId: string | number) => {
-    const response = await axiosInstance.get(`/reports`, {
-      params: { asset_type: assetType, asset_id: assetId },
-    });
-    return response.data.results || response.data;
-  },
-
-  // Get dashboard summary
-  getDashboardSummary: async () => {
-    const response = await axiosInstance.get('/dashboard/summary');
     return response.data;
   },
 };

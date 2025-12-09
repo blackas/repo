@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   AppBar,
   Box,
@@ -36,14 +36,15 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-  { text: 'Korean Stocks', icon: <TrendingUp />, path: '/assets/kr-stock' },
-  { text: 'US Stocks', icon: <ShowChart />, path: '/assets/us-stock' },
+  { text: 'Korean Stocks', icon: <TrendingUp />, path: '/assets/stocks/kr' },
+  { text: 'US Stocks', icon: <ShowChart />, path: '/assets/stocks/us' },
   { text: 'Crypto', icon: <CurrencyBitcoin />, path: '/assets/crypto' },
 ];
 
 function MainLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuthStore();
 
   const handleDrawerToggle = () => {
@@ -70,7 +71,10 @@ function MainLayout() {
       <List>
         {navItems.map((item) => (
           <ListItem key={item.text} disablePadding>
-            <ListItemButton onClick={() => handleNavigation(item.path)}>
+            <ListItemButton
+              onClick={() => handleNavigation(item.path)}
+              selected={location.pathname === item.path}
+            >
               <ListItemIcon>{item.icon}</ListItemIcon>
               <ListItemText primary={item.text} />
             </ListItemButton>
@@ -101,7 +105,7 @@ function MainLayout() {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            Asset Portfolio Tracker
+            Asset Folio
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>

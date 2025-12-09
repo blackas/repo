@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { Toaster } from 'react-hot-toast';
 import MainLayout from './components/layout/MainLayout';
 import Dashboard from './pages/Dashboard';
 import AssetListPage from './pages/AssetListPage';
@@ -32,6 +33,7 @@ function App() {
 
   return (
     <ThemeProvider theme={theme}>
+      <Toaster position="top-right" />
       <BrowserRouter>
         <Routes>
           {/* Public routes */}
@@ -49,12 +51,12 @@ function App() {
           >
             <Route index element={<Dashboard />} />
             <Route
-              path="assets/kr-stock"
-              element={<AssetListPage assetType="kr-stock" title="Korean Stocks" />}
+              path="assets/stocks/kr"
+              element={<AssetListPage assetType="kr-stock" title="Korean Stocks" market="KRX" />}
             />
             <Route
-              path="assets/us-stock"
-              element={<AssetListPage assetType="us-stock" title="US Stocks" />}
+              path="assets/stocks/us"
+              element={<AssetListPage assetType="us-stock" title="US Stocks" market="NASDAQ" />}
             />
             <Route
               path="assets/crypto"
