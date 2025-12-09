@@ -9,6 +9,8 @@ import {
   Alert,
   Button,
   Stack,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
 import {
@@ -21,15 +23,19 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import type { AssetType, AssetDetail } from '../types';
+import type { AssetType, AssetDetail, PriceData } from '../types';
 import { apiService } from '../services/api';
+
+type CandleType = 'daily' | 'weekly' | 'monthly';
 
 function AssetDetailPage() {
   const { assetType, assetId } = useParams<{ assetType: AssetType; assetId: string }>();
   const navigate = useNavigate();
   const [asset, setAsset] = useState<AssetDetail | null>(null);
+  const [prices, setPrices] = useState<PriceData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [candleType, setCandleType] = useState<CandleType>('daily');
 
   useEffect(() => {
     const fetchAssetDetail = async () => {
@@ -38,8 +44,8 @@ function AssetDetailPage() {
       setLoading(true);
       setError(null);
       try {
-        const data = await apiService.getAssetDetail(assetType as AssetType, assetId);
-        setAsset(data);
+        const assetData = await apiService.getAssetDetail(assetType as AssetType, assetId);
+        setAsset(assetData);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch asset details');
       } finally {
@@ -50,8 +56,32 @@ function AssetDetailPage() {
     fetchAssetDetail();
   }, [assetType, assetId]);
 
+  useEffect(() => {
+    const fetchPrices = async () => {
+      if (!assetType || !assetId) return;
+
+      try {
+        const priceData = await apiService.getAssetPrices(assetType as AssetType, assetId, { candle_type: candleType });
+        setPrices(priceData);
+      } catch (err) {
+        console.error('Failed to fetch asset prices:', err);
+      }
+    };
+
+    fetchPrices();
+  }, [assetType, assetId, candleType]);
+
   const handleBack = () => {
     navigate(-1);
+  };
+
+  const handleCandleTypeChange = (
+    event: React.MouseEvent<HTMLElement>,
+    newCandleType: CandleType | null
+  ) => {
+    if (newCandleType) {
+      setCandleType(newCandleType);
+    }
   };
 
   if (loading) {
@@ -140,23 +170,39 @@ function AssetDetailPage() {
           </Paper>
         </Stack>
 
-        {asset.historicalData && asset.historicalData.length > 0 && (
-          <Paper sx={{ p: 3 }}>
+        <Paper sx={{ p: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6" gutterBottom>
               Price History
             </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={asset.historicalData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="close" stroke="#8884d8" name="Close Price" />
-              </LineChart>
-            </ResponsiveContainer>
-          </Paper>
-        )}
+            <ToggleButtonGroup
+              value={candleType}
+              exclusive
+              onChange={handleCandleTypeChange}
+              aria-label="price history interval"
+            >
+              <ToggleButton value="daily" aria-label="daily">
+                Daily
+              </ToggleButton>
+              <ToggleButton value="weekly" aria-label="weekly">
+                Weekly
+              </ToggleButton>
+              <ToggleButton value="monthly" aria-label="monthly">
+                Monthly
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={prices}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="trade_date" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="close_price" stroke="#8884d8" name="Close Price" />
+            </LineChart>
+          </ResponsiveContainer>
+        </Paper>
       </Stack>
     </Container>
   );
