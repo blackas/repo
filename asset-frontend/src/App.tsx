@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { Toaster } from 'react-hot-toast';
 import MainLayout from './components/layout/MainLayout';
 import Dashboard from './pages/Dashboard';
 import AssetListPage from './pages/AssetListPage';
@@ -32,6 +33,7 @@ function App() {
 
   return (
     <ThemeProvider theme={theme}>
+      <Toaster position="top-right" />
       <BrowserRouter>
         <Routes>
           {/* Public routes */}

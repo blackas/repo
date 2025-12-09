@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Asset, AssetType, AssetState } from '../types';
+import { toastUtils } from '../utils/toast';
 
 type AssetStore = {
   [key in AssetType]: AssetState;
@@ -34,10 +35,14 @@ const useAssetStore = create<AssetStore & AssetActions>((set) => ({
       [assetType]: { ...state[assetType], isLoading },
     })),
 
-  setError: (assetType, error) =>
+  setError: (assetType, error) => {
     set((state) => ({
       [assetType]: { ...state[assetType], error, isLoading: false },
-    })),
+    }));
+    if (error) {
+      toastUtils.error(error);
+    }
+  },
 }));
 
 export default useAssetStore;
