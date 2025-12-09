@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -14,7 +14,9 @@ import {
   Alert,
   Box,
   Pagination,
+  TextField,
 } from '@mui/material';
+import debounce from 'lodash.debounce';
 import type { AssetType } from '../types';
 import useAssetStore from '../store/assetStore';
 import { apiService } from '../services/api';
@@ -36,22 +38,26 @@ function AssetListPage({ assetType, title, market }: AssetListPageProps) {
 
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    const fetchAssets = async () => {
+  const debouncedFetchAssets = useCallback(
+    debounce(async (searchQuery, currentPage) => {
       setLoading(assetType, true);
       try {
-        const params = market ? { market, page } : { page };
+        const params = { market, page: currentPage, search: searchQuery };
         const response = await apiService.getAssets(assetType, params);
         setAssets(assetType, response.items);
         setTotalPages(response.total_pages);
       } catch (error) {
         setError(assetType, error instanceof Error ? error.message : 'Failed to fetch assets');
       }
-    };
+    }, 500),
+    [assetType, market]
+  );
 
-    fetchAssets();
-  }, [assetType, market, page, setAssets, setLoading, setError]);
+  useEffect(() => {
+    debouncedFetchAssets(search, page);
+  }, [search, page, debouncedFetchAssets]);
 
   const handleRowClick = (assetId: string | number) => {
     navigate(`/assets/${assetType}/${assetId}`);
@@ -59,6 +65,11 @@ function AssetListPage({ assetType, title, market }: AssetListPageProps) {
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
     setPage(value);
+  };
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(event.target.value);
+    setPage(1); // Reset to first page on new search
   };
 
   if (assetState.isLoading) {
@@ -79,9 +90,17 @@ function AssetListPage({ assetType, title, market }: AssetListPageProps) {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        {title}
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="h4" gutterBottom>
+          {title}
+        </Typography>
+        <TextField
+          label="Search"
+          variant="outlined"
+          value={search}
+          onChange={handleSearchChange}
+        />
+      </Box>
 
       {assetState.items.length === 0 ? (
         <Box sx={{ mt: 4 }}>
