@@ -36,8 +36,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-  { text: 'Korean Stocks', icon: <TrendingUp />, path: '/assets/kr-stock' },
-  { text: 'US Stocks', icon: <ShowChart />, path: '/assets/us-stock' },
+  { text: 'Korean Stocks', icon: <TrendingUp />, path: '/assets/stocks/kr' },
+  { text: 'US Stocks', icon: <ShowChart />, path: '/assets/stocks/us' },
   { text: 'Crypto', icon: <CurrencyBitcoin />, path: '/assets/crypto' },
 ];
 

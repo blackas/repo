@@ -49,12 +49,12 @@ function App() {
           >
             <Route index element={<Dashboard />} />
             <Route
-              path="assets/kr-stock"
-              element={<AssetListPage assetType="kr-stock" title="Korean Stocks" />}
+              path="assets/stocks/kr"
+              element={<AssetListPage assetType="kr-stock" title="Korean Stocks" market="KRX" />}
             />
             <Route
-              path="assets/us-stock"
-              element={<AssetListPage assetType="us-stock" title="US Stocks" />}
+              path="assets/stocks/us"
+              element={<AssetListPage assetType="us-stock" title="US Stocks" market="NASDAQ" />}
             />
             <Route
               path="assets/crypto"
