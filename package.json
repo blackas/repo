@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@types/lodash.debounce": "^4.0.9",
+    "lodash.debounce": "^4.0.8",
+    "react-hot-toast": "^2.6.0"
+  }
+}

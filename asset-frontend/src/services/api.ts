@@ -108,7 +108,7 @@ axiosInstance.interceptors.response.use(
 
 // Get endpoint based on asset type
 const getEndpointForAssetType = (assetType: AssetType): string => {
-  const endpointMap: Record<AssetType, string> = {
+  const endpointMap: Record<string, string> = {
     'kr-stock': '/stocks',
     'us-stock': '/stocks',
     'crypto': '/crypto',
@@ -119,16 +119,23 @@ const getEndpointForAssetType = (assetType: AssetType): string => {
 // API Functions
 export const apiService = {
   // Get list of assets by type
-  getAssets: async (assetType: AssetType, params?: Record<string, any>): Promise<Asset[]> => {
+  getAssets: async (assetType: AssetType, params?: Record<string, any>): Promise<any> => {
     const endpoint = getEndpointForAssetType(assetType);
     const response = await axiosInstance.get(endpoint, { params });
-    return response.data.results || response.data;
+    return response.data;
   },
 
   // Get asset detail by type and ID
   getAssetDetail: async (assetType: AssetType, assetId: string | number): Promise<AssetDetail> => {
     const endpoint = getEndpointForAssetType(assetType);
     const response = await axiosInstance.get(`${endpoint}/${assetId}`);
+    return response.data;
+  },
+
+  // Get asset prices by type and ID
+  getAssetPrices: async (assetType: AssetType, assetId: string | number, params?: Record<string, any>): Promise<any> => {
+    const endpoint = getEndpointForAssetType(assetType);
+    const response = await axiosInstance.get(`${endpoint}/${assetId}/prices`, { params });
     return response.data;
   },
 };
