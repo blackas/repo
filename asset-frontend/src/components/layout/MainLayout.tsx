@@ -23,6 +23,8 @@ import {
   ShowChart,
   CurrencyBitcoin,
   Logout as LogoutIcon,
+  AccountCircle as AccountCircleIcon,
+  Star as StarIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -39,6 +41,7 @@ const navItems: NavItem[] = [
   { text: 'Korean Stocks', icon: <TrendingUp />, path: '/assets/stocks/kr' },
   { text: 'US Stocks', icon: <ShowChart />, path: '/assets/stocks/us' },
   { text: 'Crypto', icon: <CurrencyBitcoin />, path: '/assets/crypto' },
+  { text: 'Watchlists', icon: <StarIcon />, path: '/watchlists' },
 ];
 
 function MainLayout() {
@@ -111,6 +114,9 @@ function MainLayout() {
             <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
               {user?.username}
             </Typography>
+            <IconButton color="inherit" onClick={() => navigate('/profile')}>
+              <AccountCircleIcon />
+            </IconButton>
             <Button
               color="inherit"
               onClick={handleLogout}
