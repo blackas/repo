@@ -11,8 +11,11 @@ import {
   Stack,
   ToggleButtonGroup,
   ToggleButton,
+  IconButton,
+  Menu,
+  MenuItem,
 } from '@mui/material';
-import { ArrowBack } from '@mui/icons-material';
+import { ArrowBack, Star } from '@mui/icons-material';
 import {
   LineChart,
   Line,
@@ -25,6 +28,9 @@ import {
 } from 'recharts';
 import type { AssetType, AssetDetail, PriceData } from '../types';
 import { apiService } from '../services/api';
+import { useWatchlistStore } from '../store/watchlistStore';
+import { watchlistService } from '../services/watchlistService';
+import { toastUtils } from '../utils/toast';
 
 type CandleType = 'daily' | 'weekly' | 'monthly';
 
@@ -36,6 +42,13 @@ function AssetDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [candleType, setCandleType] = useState<CandleType>('daily');
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+
+  const { watchlists, fetchWatchlists } = useWatchlistStore();
+
+  useEffect(() => {
+    fetchWatchlists();
+  }, [fetchWatchlists]);
 
   useEffect(() => {
     const fetchAssetDetail = async () => {
@@ -84,6 +97,26 @@ function AssetDetailPage() {
     }
   };
 
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleAddToWatchlist = async (watchlistId: number) => {
+    if (!assetType || !assetId) return;
+    try {
+      await watchlistService.addAssetToWatchlist(watchlistId, assetType, parseInt(assetId));
+      toastUtils.success(`Asset added to watchlist.`);
+    } catch (error) {
+      toastUtils.error('Failed to add asset to watchlist.');
+    } finally {
+      handleMenuClose();
+    }
+  };
+
   if (loading) {
     return (
       <Container maxWidth="lg" sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
@@ -105,9 +138,26 @@ function AssetDetailPage() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Button startIcon={<ArrowBack />} onClick={handleBack} sx={{ mb: 2 }}>
-        Back
-      </Button>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Button startIcon={<ArrowBack />} onClick={handleBack}>
+          Back
+        </Button>
+        <IconButton onClick={handleMenuOpen}>
+          <Star />
+        </IconButton>
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={handleMenuClose}
+        >
+          <MenuItem disabled>Add to watchlist</MenuItem>
+          {watchlists.map((w) => (
+            <MenuItem key={w.id} onClick={() => handleAddToWatchlist(w.id)}>
+              {w.name}
+            </MenuItem>
+          ))}
+        </Menu>
+      </Stack>
 
       <Typography variant="h4" gutterBottom>
         {asset.name}

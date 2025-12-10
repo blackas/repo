@@ -8,6 +8,8 @@ import AssetListPage from './pages/AssetListPage';
 import AssetDetailPage from './pages/AssetDetailPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import UserProfilePage from './pages/UserProfilePage';
+import WatchlistPage from './pages/WatchlistPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import { useAuthStore } from './store/useAuthStore';
 
@@ -63,6 +65,8 @@ function App() {
               element={<AssetListPage assetType="crypto" title="Cryptocurrencies" />}
             />
             <Route path="assets/:assetType/:assetId" element={<AssetDetailPage />} />
+            <Route path="profile" element={<UserProfilePage />} />
+            <Route path="watchlists" element={<WatchlistPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
