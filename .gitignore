@@ -8,6 +8,7 @@ vovu/settings/local.py
 CLAUDE.md
 !vovu/orders/landedcosts/shipping/rates/CLAUDE.md
 *.mo
+node_modules/*
 
 # System files
 .DS_Store
